@@ -321,7 +321,7 @@ namespace Crawler_project
             builder.Services.AddSingleton<ILinkCheck, HostingRblChecks>();
             builder.Services.AddSingleton<ILinkCheck, OutgoingDomainBlacklistChecks>();
             //builder.Services.AddSingleton<ILinkCheck, WhoisCollectorCheck>();
-
+            builder.WebHost.UseUrls("http://0.0.0.0:7168");
             builder.Services.AddSingleton<ILinkCheck, PageSpeedMobileCheck>();
             builder.Services.AddSingleton<ILinkCheck, PageSpeedDesktopCheck>();
 
@@ -331,12 +331,15 @@ namespace Crawler_project
             {
                 app.MapOpenApi();
             }
-
-            app.UseHttpsRedirection();
-            app.UseAuthorization();
-            app.MapControllers();
+            //app.Run("http://0.0.0.0:7168");
+            //app.UseHttpsRedirection();
+    
             app.UseDefaultFiles();
             app.UseStaticFiles();
+
+            app.UseAuthorization();
+            app.MapControllers();
+
             app.Run();
         }
     }

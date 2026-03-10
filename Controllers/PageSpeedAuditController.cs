@@ -30,7 +30,19 @@ namespace Crawler_project.Controllers
                 ? PageSpeedStrategy.Desktop
                 : PageSpeedStrategy.Mobile;
 
-            return Ok(_psi.Build(host, s));
+            var report = _psi.Build(host, s);
+            if (report.Tested == 0)
+            {
+                var altHost = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                    ? host.Substring(4)
+                    : "www." + host;
+
+                var altReport = _psi.Build(altHost, s);
+                if (altReport.Tested > 0)
+                    return Ok(altReport);
+            }
+
+            return Ok(report);
         }
     }
 }
