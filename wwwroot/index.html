@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crawler Audit Dashboard</title>
+  <style>
+    :root {
+      --bg: #f3f6fb;
+      --surface: #ffffff;
+      --surface-2: #f8fafc;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --primary: #2f6fed;
+      --primary-soft: #eaf1ff;
+      --success: #138a5b;
+      --success-soft: #e9f8f1;
+      --warn: #c78312;
+      --warn-soft: #fff5df;
+      --danger: #d14343;
+      --danger-soft: #fff0f0;
+      --shadow: 0 10px 30px rgba(31, 41, 55, 0.08);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: Inter, Segoe UI, Arial, sans-serif; }
+    body { min-height: 100vh; }
+
+    .layout { display: grid; grid-template-columns: 284px minmax(0, 1fr); min-height: 100vh; }
+    .sidebar {
+      background: linear-gradient(180deg, #1e2a3f 0%, #182334 100%);
+      color: #eff4ff; padding: 28px 22px; position: sticky; top: 0; height: 100vh;
+      display: flex; flex-direction: column; gap: 26px;
+    }
+    .brand { display: flex; align-items: center; gap: 14px; padding-bottom: 18px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .brand-mark {
+      width: 44px; height: 44px; border-radius: 14px; background: linear-gradient(135deg, #65a6ff, #7dd3fc);
+      display: flex; align-items: center; justify-content: center; color: #0f172a; font-weight: 800;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
+    }
+    .brand h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .01em; }
+    .brand p, .menu small, .sidebar-note { margin: 4px 0 0; color: rgba(239,244,255,.7); line-height: 1.45; }
+    .menu { display: grid; gap: 10px; }
+    .menu a {
+      text-decoration: none; color: #f8fbff; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06);
+      border-radius: 14px; padding: 13px 14px; transition: .2s ease; font-size: 14px;
+    }
+    .menu a:hover { background: rgba(255,255,255,.09); transform: translateX(2px); }
+
+    .content { padding: 28px; display: grid; gap: 22px; }
+    .hero {
+      background: linear-gradient(135deg, #ffffff 0%, #f7fbff 100%); border: 1px solid rgba(47,111,237,.08);
+      border-radius: 28px; padding: 28px; box-shadow: var(--shadow);
+    }
+    .hero-top { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--primary-soft); color: var(--primary);
+      border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 14px;
+    }
+    .hero h2 { margin: 0 0 10px; font-size: clamp(28px, 3vw, 42px); line-height: 1.1; }
+    .hero p { margin: 0; color: var(--muted); max-width: 900px; line-height: 1.6; font-size: 15px; }
+    .hero-actions, .inline-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .hero-actions { margin-top: 22px; }
+
+    .card {
+      background: var(--surface); border-radius: var(--radius); border: 1px solid var(--line); box-shadow: var(--shadow); padding: 20px;
+    }
+    .card-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .card-title h3 { margin: 0; font-size: 18px; }
+    .grid-2 { display: grid; gap: 22px; grid-template-columns: 1.1fr .9fr; }
+    .grid-3 { display: grid; gap: 18px; grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid-4 { display: grid; gap: 18px; grid-template-columns: repeat(4, minmax(0,1fr)); }
+
+    .metric, .status-card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: var(--shadow);
+    }
+    .metric span, .status-card .label { color: var(--muted); font-size: 13px; }
+    .metric strong, .status-card strong { display: block; margin-top: 10px; font-size: 32px; line-height: 1; letter-spacing: -.03em; }
+    .metric .sub, .status-card .sub { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+    .status-card { position: relative; overflow: hidden; }
+    .status-card::before {
+      content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: #cbd5e1;
+    }
+    .status-card.ok::before { background: var(--success); }
+    .status-card.warn::before { background: var(--warn); }
+    .status-card.error::before { background: var(--danger); }
+    .status-card.info::before { background: var(--primary); }
+
+    .form-grid { display: grid; grid-template-columns: 2fr .8fr .8fr; gap: 14px; margin-top: 14px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 8px; }
+    input, select, textarea {
+      width: 100%; border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 13px 14px; font-size: 14px;
+      color: var(--text); outline: none; transition: .2s ease;
+    }
+    input:focus, select:focus { border-color: rgba(47,111,237,.45); box-shadow: 0 0 0 4px rgba(47,111,237,.1); }
+    .btn { border: 0; border-radius: 14px; padding: 13px 18px; font-size: 14px; font-weight: 700; cursor: pointer; transition: .2s ease; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-secondary { background: #fff; color: var(--text); border: 1px solid var(--line); }
+    .btn-success { background: #1d8f61; color: #fff; }
+
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+    }
+    .status-pending, .status-none { background: #eef2f7; color: #475569; }
+    .status-running { background: #e9f1ff; color: #275fce; }
+    .status-finished, .status-completed { background: var(--success-soft); color: var(--success); }
+    .status-canceled { background: var(--warn-soft); color: var(--warn); }
+    .status-faulted, .status-failed { background: var(--danger-soft); color: var(--danger); }
+    .status-notstarted { background: #eef2f7; color: #475569; }
+
+    .summary-list { display: grid; gap: 12px; max-height: 440px; overflow: auto; padding-right: 4px; }
+    .summary-item {
+      display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px 16px; border-radius: 16px;
+      background: var(--surface-2); border: 1px solid var(--line);
+    }
+    .summary-item strong { display: block; margin-bottom: 4px; }
+    .summary-item small { color: var(--muted); }
+    .badge {
+      min-width: 44px; height: 34px; padding: 0 10px; border-radius: 12px; background: var(--primary-soft); color: var(--primary);
+      display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px;
+    }
+
+    .kv-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+    .kv { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+    .kv span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .kv strong { font-size: 18px; }
+
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 980px; font-size: 14px; }
+    th, td { text-align: left; padding: 14px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); background: #fbfcfe; position: sticky; top: 0; }
+    td code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #f8fafc; border: 1px solid var(--line);
+      border-radius: 10px; padding: 4px 8px; font-size: 12px; word-break: break-all;
+    }
+
+    .issue-list, .sample-list { display: grid; gap: 8px; }
+    .issue-chip, .sample-chip {
+      display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 999px; background: #f8fafc;
+      border: 1px solid var(--line); width: fit-content; max-width: 100%; font-size: 12px;
+    }
+    .issue-chip b, .sample-chip b { font-size: 11px; text-transform: uppercase; color: var(--muted); }
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .empty {
+      text-align: center; padding: 28px 14px; color: var(--muted); border: 1px dashed var(--line); border-radius: 16px; background: var(--surface-2);
+    }
+    .progress { margin-top: 14px; width: 100%; height: 10px; border-radius: 999px; background: #e9edf4; overflow: hidden; }
+    .progress > div { height: 100%; background: linear-gradient(90deg, #4e7cf2, #78b7ff); width: 0%; transition: width .3s ease; }
+
+    @media (max-width: 1200px) {
+      .grid-2, .grid-3, .grid-4, .form-grid { grid-template-columns: 1fr 1fr; }
+      .form-grid > div:first-child { grid-column: 1 / -1; }
+      .kv-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; border-bottom-left-radius: 24px; border-bottom-right-radius: 24px; }
+      .grid-2, .grid-3, .grid-4, .form-grid, .kv-grid { grid-template-columns: 1fr; }
+      .content { padding: 18px; }
+      .hero { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">C</div>
+        <div>
+          <h1>Crawler Audit</h1>
+          <p>Панель результатов SEO и техаудита</p>
+        </div>
+      </div>
+
+      <nav class="menu">
+        <a href="#start">Запуск аудита<br><small>Старт краула и проверок</small></a>
+        <a href="#overview">Сводка<br><small>Статусы, прогресс, KPI</small></a>
+        <a href="#host">Хост и скорость<br><small>SSL, WHOIS, IP, PageSpeed</small></a>
+        <a href="#sitemap">Sitemap<br><small>Файлы, ошибки, покрытие</small></a>
+        <a href="#issues">Проблемы<br><small>Сводка по issue-кодам</small></a>
+        <a href="#results">Результаты по URL<br><small>Таблица с деталями</small></a>
+      </nav>
+
+      <div class="sidebar-note">
+        Интерфейс выполнен в спокойной корпоративной стилистике: светлое рабочее поле, тёмная навигация, карточки, мягкие акценты и отдельные секции для инфраструктуры, скорости и sitemap.
+      </div>
+    </aside>
+
+    <main class="content">
+      <section class="hero" id="start">
+        <div class="hero-top">
+          <div>
+            <div class="eyebrow">Audit dashboard</div>
+            <h2>Управление краулингом и отображение результатов аудита</h2>
+            <p>
+              Страница работает с API проекта: запускает краул, отслеживает статус, стартует проверки,
+              отдельно показывает инфраструктурные проблемы, PageSpeed и sitemap-аудит, а также собирает результат по URL.
+            </p>
+          </div>
+          <div class="inline-actions">
+            <button class="btn btn-secondary" id="loadDemoBtn">Загрузить по Job ID</button>
+            <button class="btn btn-success" id="startChecksBtn" disabled>Запустить проверки</button>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div>
+            <label for="startUrl">Стартовый URL</label>
+            <input id="startUrl" type="url" placeholder="https://example.com" value="https://labquest.ru" />
+          </div>
+          <div>
+            <label for="maxPages">MaxPages</label>
+            <input id="maxPages" type="number" min="1" max="5000" value="100" />
+          </div>
+          <div>
+            <label for="workers">Workers</label>
+            <input id="workers" type="number" min="1" max="32" value="8" />
+          </div>
+        </div>
+
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="startBtn">Запустить краул</button>
+          <button class="btn btn-secondary" id="cancelBtn" disabled>Отменить задачу</button>
+          <button class="btn btn-secondary" id="startSitemapBtn" disabled>Запустить sitemap-аудит</button>
+        </div>
+      </section>
+
+      <section class="grid-4" id="overview">
+        <div class="metric">
+          <span>Job ID</span>
+          <strong id="jobIdMetric">—</strong>
+          <div class="sub mono" id="jobShortMetric">Нет активной задачи</div>
+        </div>
+        <div class="metric">
+          <span>Статус краула</span>
+          <strong id="crawlStateMetric">—</strong>
+          <div class="sub" id="crawlStateSub">Ожидание запуска</div>
+        </div>
+        <div class="metric">
+          <span>Статус проверок</span>
+          <strong id="checksStateMetric">—</strong>
+          <div class="sub" id="checksStateSub">Проверки не запускались</div>
+        </div>
+        <div class="metric">
+          <span>Проверено URL</span>
+          <strong id="checkedMetric">0</strong>
+          <div class="sub" id="checkedSub">0 из 0</div>
+        </div>
+      </section>
+
+      <section class="grid-2">
+        <div class="card">
+          <div class="card-title">
+            <h3>Статус задачи</h3>
+            <div id="crawlStatusPill" class="status-pill status-pending">Нет данных</div>
+          </div>
+          <div class="summary-item">
+            <div>
+              <strong>Стартовый URL</strong>
+              <small id="startUrlView">—</small>
+            </div>
+            <div class="badge" id="visitedBadge">0</div>
+          </div>
+          <div class="summary-item" style="margin-top:12px;">
+            <div>
+              <strong>Найдено URL</strong>
+              <small id="discoveredView">—</small>
+            </div>
+            <div class="badge" id="discoveredBadge">0</div>
+          </div>
+          <div class="summary-item" style="margin-top:12px;">
+            <div>
+              <strong>Лимит страниц / воркеры</strong>
+              <small id="limitsView">—</small>
+            </div>
+            <div class="badge" id="workersBadge">0</div>
+          </div>
+          <div class="progress"><div id="crawlProgressBar"></div></div>
+          <div class="muted" style="margin-top:10px;font-size:13px;" id="crawlProgressText">Прогресс появится после запуска.</div>
+        </div>
+
+        <div class="card" id="issues">
+          <div class="card-title">
+            <h3>Сводка по проблемам</h3>
+            <div id="issuesCounter" class="status-pill status-none">0 кодов</div>
+          </div>
+          <div id="issuesSummary" class="summary-list">
+            <div class="empty">После загрузки результатов здесь появятся группы ошибок по code.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="host">
+        <div class="card-title">
+          <h3>Хост, инфраструктура и скорость</h3>
+          <div class="inline-actions">
+            <div id="hostCounter" class="status-pill status-none">Нет данных</div>
+            <div id="pageSpeedCounter" class="status-pill status-none">PageSpeed: —</div>
+          </div>
+        </div>
+        <div class="grid-4" id="hostCards">
+          <div class="status-card info">
+            <div class="label">SSL / TLS</div>
+            <strong id="hostSslState">—</strong>
+            <div class="sub" id="hostSslSub">Данных пока нет</div>
+          </div>
+          <div class="status-card info">
+            <div class="label">WHOIS / домен</div>
+            <strong id="hostWhoisState">—</strong>
+            <div class="sub" id="hostWhoisSub">Данных пока нет</div>
+          </div>
+          <div class="status-card info">
+            <div class="label">DNS / IP / RBL</div>
+            <strong id="hostDnsState">—</strong>
+            <div class="sub" id="hostDnsSub">Данных пока нет</div>
+          </div>
+          <div class="status-card info">
+            <div class="label">PageSpeed</div>
+            <strong id="hostSpeedState">—</strong>
+            <div class="sub" id="hostSpeedSub">Mobile / Desktop</div>
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:18px;">
+          <div class="card" style="box-shadow:none;">
+            <div class="card-title">
+              <h3>Скорость и PageSpeed</h3>
+              <div id="pageSpeedStatusPill" class="status-pill status-none">Не загружено</div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <h4 style="margin:0 0 12px;">Mobile</h4>
+                <div class="kv-grid" id="psiMobileGrid"></div>
+              </div>
+              <div>
+                <h4 style="margin:0 0 12px;">Desktop</h4>
+                <div class="kv-grid" id="psiDesktopGrid"></div>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="box-shadow:none;">
+            <div class="card-title">
+              <h3>Ошибки хоста и инфраструктуры</h3>
+              <div id="hostIssuesPill" class="status-pill status-none">0 проблем</div>
+            </div>
+            <div id="hostIssuesSummary" class="summary-list">
+              <div class="empty">После загрузки результатов здесь появятся SSL, WHOIS, DNS, IP, PageSpeed и другие host-related проблемы.</div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section class="card" id="sitemap">
+        <div class="card-title">
+          <h3>Sitemap и индексируемость</h3>
+          <div class="inline-actions">
+            <div id="sitemapStatusPill" class="status-pill status-none">Не запускался</div>
+            <div id="sitemapFilesCounter" class="status-pill status-none">0 файлов</div>
+          </div>
+        </div>
+        <div class="grid-4">
+          <div class="metric">
+            <span>Sitemap найден</span>
+            <strong id="sitemapFoundMetric">—</strong>
+            <div class="sub" id="sitemapFoundSub">Ожидание данных</div>
+          </div>
+          <div class="metric">
+            <span>Файлы sitemap</span>
+            <strong id="sitemapFilesMetric">0</strong>
+            <div class="sub" id="sitemapFilesSub">URL файлов</div>
+          </div>
+          <div class="metric">
+            <span>URL в sitemap</span>
+            <strong id="sitemapUrlsMetric">0</strong>
+            <div class="sub" id="sitemapUrlsSub">Всего элементов</div>
+          </div>
+          <div class="metric">
+            <span>HTML pages estimated</span>
+            <strong id="sitemapHtmlMetric">0</strong>
+            <div class="sub" id="sitemapHtmlSub">Оценка HTML-страниц</div>
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:18px;">
+          <div class="card" style="box-shadow:none;">
+            <div class="card-title">
+              <h3>Сводка sitemap</h3>
+              <div id="sitemapProblemsPill" class="status-pill status-none">0 проблем</div>
+            </div>
+            <div class="summary-list" id="sitemapSummaryList">
+              <div class="empty">Здесь появятся ошибки, предупреждения и сравнительные показатели sitemap.</div>
+            </div>
+          </div>
+          <div class="card" style="box-shadow:none;">
+            <div class="card-title">
+              <h3>Примеры URL</h3>
+              <div class="muted" id="sitemapSamplingNote">Нет данных</div>
+            </div>
+            <div class="summary-list" id="sitemapSamplesList">
+              <div class="empty">После выполнения sitemap-аудита здесь будут примеры URL из сравнений.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="results">
+        <div class="card-title">
+          <h3>Результаты по URL</h3>
+          <div class="inline-actions">
+            <input id="searchInput" type="text" placeholder="Поиск по URL, error, issue code" style="width: 280px;" />
+            <button class="btn btn-secondary" id="refreshBtn">Обновить</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 22%;">URL</th>
+                <th style="width: 8%;">HTTP</th>
+                <th style="width: 10%;">Load</th>
+                <th style="width: 12%;">Final URL</th>
+                <th style="width: 20%;">Host / infra</th>
+                <th style="width: 18%;">Page / content</th>
+                <th style="width: 10%;">Error</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody">
+              <tr>
+                <td colspan="7">
+                  <div class="empty">Запустите краул или загрузите существующий Job ID.</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      apiBase: '',
+      jobId: null,
+      crawl: null,
+      checks: null,
+      results: [],
+      poller: null,
+      pagespeed: { mobile: null, desktop: null },
+      sitemap: { status: null, result: null }
+    };
+
+    const els = {
+      startUrl: document.getElementById('startUrl'),
+      maxPages: document.getElementById('maxPages'),
+      workers: document.getElementById('workers'),
+      startBtn: document.getElementById('startBtn'),
+      cancelBtn: document.getElementById('cancelBtn'),
+      startChecksBtn: document.getElementById('startChecksBtn'),
+      startSitemapBtn: document.getElementById('startSitemapBtn'),
+      loadDemoBtn: document.getElementById('loadDemoBtn'),
+      refreshBtn: document.getElementById('refreshBtn'),
+      searchInput: document.getElementById('searchInput'),
+      resultsBody: document.getElementById('resultsBody'),
+      issuesSummary: document.getElementById('issuesSummary'),
+      issuesCounter: document.getElementById('issuesCounter'),
+      jobIdMetric: document.getElementById('jobIdMetric'),
+      jobShortMetric: document.getElementById('jobShortMetric'),
+      crawlStateMetric: document.getElementById('crawlStateMetric'),
+      crawlStateSub: document.getElementById('crawlStateSub'),
+      checksStateMetric: document.getElementById('checksStateMetric'),
+      checksStateSub: document.getElementById('checksStateSub'),
+      checkedMetric: document.getElementById('checkedMetric'),
+      checkedSub: document.getElementById('checkedSub'),
+      crawlStatusPill: document.getElementById('crawlStatusPill'),
+      startUrlView: document.getElementById('startUrlView'),
+      visitedBadge: document.getElementById('visitedBadge'),
+      discoveredBadge: document.getElementById('discoveredBadge'),
+      discoveredView: document.getElementById('discoveredView'),
+      limitsView: document.getElementById('limitsView'),
+      workersBadge: document.getElementById('workersBadge'),
+      crawlProgressBar: document.getElementById('crawlProgressBar'),
+      crawlProgressText: document.getElementById('crawlProgressText'),
+      hostCounter: document.getElementById('hostCounter'),
+      pageSpeedCounter: document.getElementById('pageSpeedCounter'),
+      hostSslState: document.getElementById('hostSslState'),
+      hostSslSub: document.getElementById('hostSslSub'),
+      hostWhoisState: document.getElementById('hostWhoisState'),
+      hostWhoisSub: document.getElementById('hostWhoisSub'),
+      hostDnsState: document.getElementById('hostDnsState'),
+      hostDnsSub: document.getElementById('hostDnsSub'),
+      hostSpeedState: document.getElementById('hostSpeedState'),
+      hostSpeedSub: document.getElementById('hostSpeedSub'),
+      pageSpeedStatusPill: document.getElementById('pageSpeedStatusPill'),
+      psiMobileGrid: document.getElementById('psiMobileGrid'),
+      psiDesktopGrid: document.getElementById('psiDesktopGrid'),
+      hostIssuesPill: document.getElementById('hostIssuesPill'),
+      hostIssuesSummary: document.getElementById('hostIssuesSummary'),
+      sitemapStatusPill: document.getElementById('sitemapStatusPill'),
+      sitemapFilesCounter: document.getElementById('sitemapFilesCounter'),
+      sitemapFoundMetric: document.getElementById('sitemapFoundMetric'),
+      sitemapFoundSub: document.getElementById('sitemapFoundSub'),
+      sitemapFilesMetric: document.getElementById('sitemapFilesMetric'),
+      sitemapFilesSub: document.getElementById('sitemapFilesSub'),
+      sitemapUrlsMetric: document.getElementById('sitemapUrlsMetric'),
+      sitemapUrlsSub: document.getElementById('sitemapUrlsSub'),
+      sitemapHtmlMetric: document.getElementById('sitemapHtmlMetric'),
+      sitemapHtmlSub: document.getElementById('sitemapHtmlSub'),
+      sitemapProblemsPill: document.getElementById('sitemapProblemsPill'),
+      sitemapSummaryList: document.getElementById('sitemapSummaryList'),
+      sitemapSamplingNote: document.getElementById('sitemapSamplingNote'),
+      sitemapSamplesList: document.getElementById('sitemapSamplesList')
+    };
+
+    const safe = (value) => value === null || value === undefined || value === '' ? '—' : String(value);
+    const escapeHtml = (str) => safe(str)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+
+    const hostPrefixes = ['SSL', 'TLS', 'CERT', 'WHOIS', 'DNS', 'RBL', 'DNSBL', 'HOST', 'IP_', 'IP', 'PAGESPEED', 'PSI', 'PORT_443'];
+
+    function statusClass(name) {
+      const key = String(name || '').toLowerCase().replace(/\s+/g, '');
+      return `status-pill status-${key || 'none'}`;
+    }
+
+    function setStatusPill(el, value) {
+      el.className = statusClass(value);
+      el.textContent = value || '—';
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(`${state.apiBase}${path}`, {
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options
+      });
+      if (!response.ok) {
+        let details = '';
+        try { details = await response.text(); } catch {}
+        throw new Error(`${response.status} ${response.statusText}${details ? `: ${details}` : ''}`);
+      }
+      const ct = response.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return response.json();
+      return response.text();
+    }
+
+    function inferCardState(kind, count) {
+      if (count === 0) return ['ok', 'OK'];
+      return ['warn', `${count}`];
+    }
+
+    function renderOverview() {
+      const crawl = state.crawl || {};
+      const checks = state.checks || {};
+      const visited = Number(crawl.visited || 0);
+      const discovered = Number(crawl.discovered || 0);
+      const maxPages = Number(crawl.maxPages || 0);
+      const checked = Number(checks.checkedCount || 0);
+      const total = Number(checks.total || discovered || 0);
+      const crawlProgress = maxPages > 0 ? Math.min(100, Math.round((visited / maxPages) * 100)) : 0;
+
+      els.jobIdMetric.textContent = state.jobId ? state.jobId.slice(0, 8) : '—';
+      els.jobShortMetric.textContent = state.jobId || 'Нет активной задачи';
+      els.crawlStateMetric.textContent = crawl.state || '—';
+      els.crawlStateSub.textContent = crawl.startedAt ? `Запущено: ${new Date(crawl.startedAt).toLocaleString('ru-RU')}` : 'Ожидание запуска';
+      els.checksStateMetric.textContent = checks.state || '—';
+      els.checksStateSub.textContent = checks.startedAt ? `Запущено: ${new Date(checks.startedAt).toLocaleString('ru-RU')}` : 'Проверки не запускались';
+      els.checkedMetric.textContent = String(checked);
+      els.checkedSub.textContent = `${checked} из ${total}`;
+      els.startUrlView.textContent = crawl.startUrl || els.startUrl.value || '—';
+      els.visitedBadge.textContent = String(visited);
+      els.discoveredBadge.textContent = String(discovered);
+      els.discoveredView.textContent = discovered ? `${discovered} URL обнаружено` : 'Пока без данных';
+      els.limitsView.textContent = maxPages ? `${maxPages} страниц / workers: ${crawl.workers || 0}` : 'Нет данных';
+      els.workersBadge.textContent = String(crawl.workers || 0);
+      els.crawlProgressBar.style.width = `${crawlProgress}%`;
+      els.crawlProgressText.textContent = maxPages ? `${crawlProgress}% от лимита MaxPages` : 'Прогресс появится после запуска.';
+      setStatusPill(els.crawlStatusPill, crawl.state || 'none');
+
+      const crawlDone = ['Finished','Canceled','Faulted'].includes(crawl.state);
+      els.cancelBtn.disabled = !state.jobId || crawlDone;
+      els.startChecksBtn.disabled = !state.jobId || crawl.state !== 'Finished';
+      els.startSitemapBtn.disabled = !state.jobId || crawl.state !== 'Finished';
+    }
+
+    function isHostIssue(issue) {
+      const code = String(issue?.code || '').toUpperCase();
+      return hostPrefixes.some(prefix => code === prefix || code.startsWith(`${prefix}_`));
+    }
+
+    function splitIssues(issues) {
+      const list = Array.isArray(issues) ? issues : [];
+      return {
+        host: list.filter(isHostIssue),
+        page: list.filter(x => !isHostIssue(x))
+      };
+    }
+
+    function aggregateIssues(items, predicate = null) {
+      const map = new Map();
+      for (const row of items) {
+        const issues = Array.isArray(row.issues) ? row.issues : [];
+        for (const issue of issues) {
+          if (predicate && !predicate(issue)) continue;
+          const code = issue.code || 'UNKNOWN';
+          const entry = map.get(code) || { code, count: 0, samples: new Set(), severity: issue.severity || '' };
+          entry.count += 1;
+          if (issue.message) entry.samples.add(issue.message);
+          map.set(code, entry);
+        }
+      }
+      return [...map.values()].sort((a, b) => b.count - a.count);
+    }
+
+    function renderIssueSummary(items) {
+      const groups = aggregateIssues(items);
+      els.issuesCounter.textContent = `${groups.length} кодов`;
+      els.issuesCounter.className = groups.length ? 'status-pill status-running' : 'status-pill status-none';
+      if (!groups.length) {
+        els.issuesSummary.innerHTML = '<div class="empty">Проблемы пока не найдены или результаты ещё не загружены.</div>';
+        return;
+      }
+      els.issuesSummary.innerHTML = groups.map(group => `
+        <div class="summary-item">
+          <div>
+            <strong>${escapeHtml(group.code)}</strong>
+            <small>${escapeHtml([...group.samples][0] || 'Без описания')}</small>
+          </div>
+          <div class="badge">${group.count}</div>
+        </div>
+      `).join('');
+    }
+
+    function scoreToState(score) {
+      const num = Number(score);
+      if (!Number.isFinite(num)) return ['info', '—'];
+      if (num >= 90) return ['ok', `${num}`];
+      if (num >= 50) return ['warn', `${num}`];
+      return ['error', `${num}`];
+    }
+
+    function formatMs(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return '—';
+      return n >= 1000 ? `${(n / 1000).toFixed(1)} s` : `${Math.round(n)} ms`;
+    }
+
+    function formatCls(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n.toFixed(3) : '—';
+    }
+
+    function normalizePsiMetric(value) {
+      if (value === null || value === undefined || value === '') return null;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : value;
+    }
+
+    function normalizeScore(raw) {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return null;
+      return n <= 1 ? Math.round(n * 100) : Math.round(n);
+    }
+
+    function findValueDeep(obj, keys) {
+      if (!obj || typeof obj !== 'object') return null;
+      for (const key of keys) {
+        if (obj[key] !== undefined && obj[key] !== null && obj[key] !== '') return obj[key];
+      }
+      for (const value of Object.values(obj)) {
+        if (value && typeof value === 'object') {
+          const found = findValueDeep(value, keys);
+          if (found !== null && found !== undefined && found !== '') return found;
+        }
+      }
+      return null;
+    }
+
+    function extractPageSpeed(data) {
+      if (!data || typeof data !== 'object') return null;
+
+      const audit = data.lighthouseResult || data.result || data.report || data;
+      const categories = audit.categories || {};
+      const perf = categories.performance || {};
+      const audits = audit.audits || {};
+      const first = (...vals) => vals.find(v => v !== undefined && v !== null && v !== '');
+      const readAudit = (id, fallbackKeys = []) => first(
+        audits?.[id]?.numericValue,
+        audits?.[id]?.displayValue,
+        ...fallbackKeys.map(k => audit?.[k]),
+        ...fallbackKeys.map(k => data?.[k])
+      );
+
+      const score = normalizeScore(
+        first(
+          perf.score,
+          data.score,
+          data.performanceScore,
+          data.performance,
+          findValueDeep(data, ['score', 'performanceScore'])
+        )
+      );
+
+      const fcp = first(
+        readAudit('first-contentful-paint', ['fcp', 'firstContentfulPaint']),
+        findValueDeep(data, ['firstContentfulPaintMs', 'fcpMs', 'firstContentfulPaint'])
+      );
+      const lcp = first(
+        readAudit('largest-contentful-paint', ['lcp', 'largestContentfulPaint']),
+        findValueDeep(data, ['largestContentfulPaintMs', 'lcpMs', 'largestContentfulPaint'])
+      );
+      const tbt = first(
+        readAudit('total-blocking-time', ['tbt', 'totalBlockingTime']),
+        findValueDeep(data, ['totalBlockingTimeMs', 'tbtMs', 'totalBlockingTime'])
+      );
+      const speedIndex = first(
+        readAudit('speed-index', ['speedIndex']),
+        findValueDeep(data, ['speedIndexMs', 'speedIndex'])
+      );
+      const cls = first(
+        readAudit('cumulative-layout-shift', ['cls', 'cumulativeLayoutShift']),
+        findValueDeep(data, ['cumulativeLayoutShift', 'cls'])
+      );
+      const url = first(
+        audit.finalUrl,
+        audit.requestedUrl,
+        data.finalUrl,
+        data.requestedUrl,
+        data.url,
+        findValueDeep(data, ['url', 'requestedUrl', 'finalUrl'])
+      );
+
+      return {
+        score,
+        lcp: normalizePsiMetric(lcp),
+        fcp: normalizePsiMetric(fcp),
+        tbt: normalizePsiMetric(tbt),
+        speedIndex: normalizePsiMetric(speedIndex),
+        cls: normalizePsiMetric(cls),
+        url
+      };
+    }
+
+    function metricGridHtml(metrics) {
+      if (!metrics) return '<div class="empty">Нет данных PageSpeed.</div>';
+      const pairs = [
+        ['Score', metrics.score ?? '—'],
+        ['LCP', formatMs(metrics.lcp)],
+        ['FCP', formatMs(metrics.fcp)],
+        ['TBT', formatMs(metrics.tbt)],
+        ['Speed Index', formatMs(metrics.speedIndex)],
+        ['CLS', formatCls(metrics.cls)]
+      ];
+      return pairs.map(([label, value]) => `
+        <div class="kv"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
+      `).join('');
+    }
+
+    function hasPageSpeedData(metrics) {
+      return !!metrics && [metrics.score, metrics.lcp, metrics.fcp, metrics.tbt, metrics.speedIndex, metrics.cls].some(v => v !== null && v !== undefined && v !== '');
+    }
+
+function renderHostSection(items) {
+      const hostGroups = aggregateIssues(items, isHostIssue);
+      els.hostIssuesPill.textContent = `${hostGroups.reduce((sum, g) => sum + g.count, 0)} проблем`;
+      els.hostIssuesPill.className = hostGroups.length ? 'status-pill status-faulted' : 'status-pill status-finished';
+      els.hostCounter.textContent = hostGroups.length ? `${hostGroups.length} host-кодов` : 'Host: OK';
+      els.hostCounter.className = hostGroups.length ? 'status-pill status-running' : 'status-pill status-finished';
+
+      if (!hostGroups.length) {
+        els.hostIssuesSummary.innerHTML = '<div class="empty">Хостовых проблем пока нет или результаты ещё не загружены.</div>';
+      } else {
+        els.hostIssuesSummary.innerHTML = hostGroups.map(group => `
+          <div class="summary-item">
+            <div>
+              <strong>${escapeHtml(group.code)}</strong>
+              <small>${escapeHtml([...group.samples][0] || 'Без описания')}</small>
+            </div>
+            <div class="badge">${group.count}</div>
+          </div>
+        `).join('');
+      }
+
+      const buckets = {
+        ssl: hostGroups.filter(g => /^SSL|^TLS|^CERT/.test(g.code)).reduce((s, g) => s + g.count, 0),
+        whois: hostGroups.filter(g => /^WHOIS/.test(g.code)).reduce((s, g) => s + g.count, 0),
+        dns: hostGroups.filter(g => /^DNS|^RBL|^DNSBL|^IP|^HOST|^PORT_443/.test(g.code)).reduce((s, g) => s + g.count, 0),
+        pagespeed: hostGroups.filter(g => /^PAGESPEED|^PSI/.test(g.code)).reduce((s, g) => s + g.count, 0)
+      };
+
+      const setCard = (prefix, count, sub) => {
+        const [klass, text] = inferCardState(prefix, count);
+        const strongEl = els[`host${prefix}State`];
+        const subEl = els[`host${prefix}Sub`];
+        const card = strongEl.closest('.status-card');
+        card.className = `status-card ${klass}`;
+        strongEl.textContent = text;
+        subEl.textContent = sub;
+      };
+
+      setCard('Ssl', buckets.ssl, buckets.ssl ? `${buckets.ssl} issue по SSL/TLS/сертификату` : 'Ошибок SSL/TLS не найдено');
+      setCard('Whois', buckets.whois, buckets.whois ? `${buckets.whois} issue по домену / WHOIS` : 'Ошибок WHOIS не найдено');
+      setCard('Dns', buckets.dns, buckets.dns ? `${buckets.dns} issue по DNS / IP / RBL` : 'Ошибок DNS/IP не найдено');
+
+      const mobile = extractPageSpeed(state.pagespeed.mobile);
+      const desktop = extractPageSpeed(state.pagespeed.desktop);
+      els.psiMobileGrid.innerHTML = metricGridHtml(mobile);
+      els.psiDesktopGrid.innerHTML = metricGridHtml(desktop);
+
+      const mobileHas = hasPageSpeedData(mobile);
+      const desktopHas = hasPageSpeedData(desktop);
+      const scoreText = [mobile?.score, desktop?.score].filter(v => v !== null && v !== undefined && v !== '').join(' / ');
+      els.pageSpeedCounter.textContent = scoreText ? `PageSpeed: ${scoreText}` : 'PageSpeed: —';
+      els.pageSpeedCounter.className = (mobileHas || desktopHas) ? 'status-pill status-running' : 'status-pill status-none';
+      setStatusPill(els.pageSpeedStatusPill, (mobileHas || desktopHas) ? 'Loaded' : 'none');
+      els.pageSpeedStatusPill.textContent = (mobileHas || desktopHas) ? 'Данные загружены' : 'Не загружено';
+
+      const speedCard = els.hostSpeedState.closest('.status-card');
+      if (mobileHas || desktopHas) {
+        const score = Number(mobile?.score ?? desktop?.score);
+        const [klass, text] = scoreToState(score);
+        speedCard.className = `status-card ${klass}`;
+        els.hostSpeedState.textContent = text;
+        els.hostSpeedSub.textContent = `Mobile ${safe(mobile?.score)} / Desktop ${safe(desktop?.score)}`;
+      } else if (buckets.pagespeed) {
+        speedCard.className = 'status-card warn';
+        els.hostSpeedState.textContent = String(buckets.pagespeed);
+        els.hostSpeedSub.textContent = 'Есть issue PageSpeed, но метрики не получены';
+      } else {
+        speedCard.className = 'status-card info';
+        els.hostSpeedState.textContent = '—';
+        els.hostSpeedSub.textContent = 'Mobile / Desktop';
+      }
+    }
+
+    function renderSitemapSection() {
+      const status = state.sitemap.status || {};
+      const result = state.sitemap.result || null;
+      setStatusPill(els.sitemapStatusPill, status.status || status.Status || (result ? 'Completed' : 'NotStarted'));
+
+      if (!result) {
+        els.sitemapFilesCounter.textContent = '0 файлов';
+        els.sitemapFilesCounter.className = 'status-pill status-none';
+        els.sitemapFoundMetric.textContent = '—';
+        els.sitemapFoundSub.textContent = status.stage ? `Stage: ${status.stage}` : 'Ожидание данных';
+        els.sitemapFilesMetric.textContent = '0';
+        els.sitemapUrlsMetric.textContent = '0';
+        els.sitemapHtmlMetric.textContent = '0';
+        els.sitemapSummaryList.innerHTML = '<div class="empty">Здесь появятся ошибки, предупреждения и сравнительные показатели sitemap.</div>';
+        els.sitemapSamplesList.innerHTML = '<div class="empty">После выполнения sitemap-аудита здесь будут примеры URL из сравнений.</div>';
+        els.sitemapSamplingNote.textContent = status.stage ? `Stage: ${status.stage}` : 'Нет данных';
+        els.sitemapProblemsPill.textContent = '0 проблем';
+        els.sitemapProblemsPill.className = 'status-pill status-none';
+        return;
+      }
+
+      const problems = Number(result.errorsCount || 0) + Number(result.warningsCount || 0);
+      els.sitemapFilesCounter.textContent = `${safe(result.sitemapFilesCount || 0)} файлов`;
+      els.sitemapFilesCounter.className = 'status-pill status-running';
+      els.sitemapFoundMetric.textContent = result.sitemapFound ? 'Да' : 'Нет';
+      els.sitemapFoundSub.textContent = result.hasSitemapXml ? 'Файл /sitemap.xml обнаружен' : 'Стандартный /sitemap.xml не подтверждён';
+      els.sitemapFilesMetric.textContent = safe(result.sitemapFilesCount || 0);
+      els.sitemapFilesSub.textContent = (result.sitemapFiles || []).slice(0, 2).join(' · ') || 'URL файлов';
+      els.sitemapUrlsMetric.textContent = safe(result.totalElementsInSitemaps || 0);
+      els.sitemapUrlsSub.textContent = `In sitemap, not in crawl: ${safe(result.inSitemapButNotFoundByCrawlCount || 0)}`;
+      els.sitemapHtmlMetric.textContent = safe(result.htmlPagesCountEstimated || 0);
+      els.sitemapHtmlSub.textContent = `Noindex in sitemap: ${safe(result.noindexButInSitemapCount || 0)}`;
+      els.sitemapProblemsPill.textContent = `${problems} проблем`;
+      els.sitemapProblemsPill.className = problems ? 'status-pill status-faulted' : 'status-pill status-finished';
+
+      const summary = [
+        ['Ошибки sitemap', result.errorsCount || 0, (result.errors || [])[0] || 'Нет'],
+        ['Warnings sitemap', result.warningsCount || 0, (result.warnings || [])[0] || 'Нет'],
+        ['Есть в sitemap, но не найдено краулом', result.inSitemapButNotFoundByCrawlCount || 0, 'Сравнение sitemap ↔ crawl'],
+        ['Indexable, но не в sitemap', result.indexableButNotInSitemapCount || 0, 'Страницы стоит добавить в sitemap'],
+        ['Noindex / blocked, но в sitemap', result.noindexButInSitemapCount || 0, 'Стоит проверить индексируемость']
+      ];
+
+      els.sitemapSummaryList.innerHTML = summary.map(([label, count, descr]) => `
+        <div class="summary-item">
+          <div>
+            <strong>${escapeHtml(label)}</strong>
+            <small>${escapeHtml(descr)}</small>
+          </div>
+          <div class="badge">${escapeHtml(count)}</div>
+        </div>
+      `).join('');
+
+      const sampleBlocks = [
+        ['Sitemap files', (result.sitemapFiles || []).slice(0, 5)],
+        ['In sitemap, not in crawl', (result.inSitemapButNotFoundByCrawlSample || []).slice(0, 5)],
+        ['Indexable, not in sitemap', (result.indexableButNotInSitemapSample || []).slice(0, 5)],
+        ['Noindex in sitemap', (result.noindexButInSitemapSample || []).slice(0, 5)]
+      ].filter(([, arr]) => arr && arr.length);
+
+      els.sitemapSamplesList.innerHTML = sampleBlocks.length ? sampleBlocks.map(([title, arr]) => `
+        <div class="summary-item" style="align-items:flex-start;">
+          <div>
+            <strong>${escapeHtml(title)}</strong>
+            <div class="sample-list" style="margin-top:10px;">
+              ${arr.map(url => `<div class="sample-chip"><b>URL</b> ${escapeHtml(url)}</div>`).join('')}
+            </div>
+          </div>
+        </div>
+      `).join('') : '<div class="empty">Нет примеров URL для вывода.</div>';
+
+      els.sitemapSamplingNote.textContent = result.indexabilitySamplingNote || 'Нет данных по выборке';
+    }
+
+    function issueColumnHtml(issues) {
+      return issues.length
+        ? `<div class="issue-list">${issues.slice(0, 6).map(issue => `
+            <div class="issue-chip"><b>${escapeHtml(issue.code || 'ISSUE')}</b> ${escapeHtml(issue.message || '')}</div>
+          `).join('')}${issues.length > 6 ? `<div class="muted">+ ещё ${issues.length - 6}</div>` : ''}</div>`
+        : '<span class="muted">—</span>';
+    }
+
+    function renderTable() {
+      const q = els.searchInput.value.trim().toLowerCase();
+      const items = !q ? state.results : state.results.filter(item => JSON.stringify(item).toLowerCase().includes(q));
+      if (!items.length) {
+        els.resultsBody.innerHTML = `<tr><td colspan="7"><div class="empty">Нет строк для отображения.</div></td></tr>`;
+        return;
+      }
+
+      els.resultsBody.innerHTML = items.map(row => {
+        const { host, page } = splitIssues(row.issues);
+        return `
+          <tr>
+            <td><code>${escapeHtml(row.url || '')}</code></td>
+            <td>${escapeHtml(row.statusCode || '—')}</td>
+            <td>${row.loadSeconds ? `${escapeHtml(row.loadSeconds)} s` : '—'}</td>
+            <td><code>${escapeHtml(row.finalUrl || '')}</code></td>
+            <td>${issueColumnHtml(host)}</td>
+            <td>${issueColumnHtml(page)}</td>
+            <td>${row.error ? `<span class="muted">${escapeHtml(row.error)}</span>` : '—'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function loadPageSpeed() {
+      if (!state.jobId) return;
+      const [mobile, desktop] = await Promise.all([
+        api(`/api/crawl/${state.jobId}/pagespeed-audit?strategy=mobile`).catch(() => null),
+        api(`/api/crawl/${state.jobId}/pagespeed-audit?strategy=desktop`).catch(() => null)
+      ]);
+      state.pagespeed.mobile = mobile;
+      state.pagespeed.desktop = desktop;
+    }
+
+async function loadSitemap() {
+  if (!state.jobId) return;
+
+  const status = await api(`/api/crawl/${state.jobId}/sitemap-audit/status`).catch(() => null);
+  state.sitemap.status = status;
+
+  const rawStatus = String(status?.status || status?.Status || '').toLowerCase();
+
+  const isDone = ['completed', 'finished', 'done', 'success', 'succeeded'].includes(rawStatus);
+  const isRunning = ['running', 'inprogress', 'processing'].includes(rawStatus);
+
+  if (isDone) {
+    state.sitemap.result = await api(`/api/crawl/${state.jobId}/sitemap-audit/result`).catch(() => null);
+  } else if (isRunning) {
+    state.sitemap.result = null;
+  } else {
+    // fallback: если status странный, но result уже доступен — всё равно пробуем получить
+    state.sitemap.result = await api(`/api/crawl/${state.jobId}/sitemap-audit/result`).catch(() => null);
+  }
+}
+
+    async function refreshAll() {
+      if (!state.jobId) return;
+      try {
+        const resultPayloadPromise = api(`/api/crawl/${state.jobId}/checks/results?offset=0&limit=5000`).catch(() => null);
+        const checksPromise = api(`/api/crawl/${state.jobId}/checks/status`).catch(() => null);
+        const crawlPromise = api(`/api/crawl/${state.jobId}`);
+
+        state.crawl = await crawlPromise;
+        state.checks = await checksPromise;
+        const resultPayload = await resultPayloadPromise;
+        state.results = Array.isArray(resultPayload?.items) ? resultPayload.items : [];
+
+        await Promise.allSettled([loadPageSpeed(), loadSitemap()]);
+
+        renderOverview();
+        renderIssueSummary(state.results);
+        renderHostSection(state.results);
+        renderSitemapSection();
+        renderTable();
+      } catch (error) {
+        alert(`Не удалось обновить данные: ${error.message}`);
+      }
+    }
+
+    function startPolling() {
+      stopPolling();
+      state.poller = setInterval(async () => {
+        await refreshAll();
+        const crawlDone = ['Finished', 'Canceled', 'Faulted'].includes(state.crawl?.state);
+        const checksDone = !state.checks || ['Finished', 'Canceled', 'Faulted', 'None'].includes(state.checks?.state);
+        const sitemapStatusValue = String(state.sitemap?.status?.status || state.sitemap?.status?.Status || '').toLowerCase();
+        const sitemapDone = !state.sitemap?.status || ['completed', 'failed', 'canceled', 'notstarted', ''].includes(sitemapStatusValue);
+        if (crawlDone && checksDone && sitemapDone) stopPolling();
+      }, 3000);
+    }
+
+    function stopPolling() {
+      if (state.poller) clearInterval(state.poller);
+      state.poller = null;
+    }
+
+    async function startCrawl() {
+      try {
+        const payload = {
+          startUrl: els.startUrl.value.trim(),
+          maxPages: Number(els.maxPages.value || 100),
+          workers: Number(els.workers.value || 8),
+          respectRobots: true
+        };
+        const data = await api('/api/crawl', { method: 'POST', body: JSON.stringify(payload) });
+        state.jobId = data.jobId;
+        state.results = [];
+        state.pagespeed = { mobile: null, desktop: null };
+        state.sitemap = { status: null, result: null };
+        renderOverview();
+        renderIssueSummary([]);
+        renderHostSection([]);
+        renderSitemapSection();
+        renderTable();
+        await refreshAll();
+        startPolling();
+      } catch (error) {
+        alert(`Не удалось запустить краул: ${error.message}`);
+      }
+    }
+
+    async function startChecks() {
+      if (!state.jobId) return;
+      try {
+        await api(`/api/crawl/${state.jobId}/checks/start`, { method: 'POST' });
+        await api(`/api/crawl/${state.jobId}/sitemap-audit/start`, { method: 'POST' }).catch(() => null);
+        await refreshAll();
+        startPolling();
+      } catch (error) {
+        alert(`Не удалось запустить проверки: ${error.message}`);
+      }
+    }
+
+    async function startSitemapAudit() {
+      if (!state.jobId) return;
+      try {
+        await api(`/api/crawl/${state.jobId}/sitemap-audit/start`, { method: 'POST' });
+        await refreshAll();
+        startPolling();
+      } catch (error) {
+        alert(`Не удалось запустить sitemap-аудит: ${error.message}`);
+      }
+    }
+
+    async function cancelJob() {
+      if (!state.jobId) return;
+      try {
+        await api(`/api/crawl/${state.jobId}/cancel`, { method: 'POST' });
+        await refreshAll();
+      } catch (error) {
+        alert(`Не удалось отменить задачу: ${error.message}`);
+      }
+    }
+
+    async function loadExistingJob() {
+      const jobId = prompt('Введите существующий Job ID');
+      if (!jobId) return;
+      state.jobId = jobId.trim();
+      await refreshAll();
+      startPolling();
+    }
+
+    els.startBtn.addEventListener('click', startCrawl);
+    els.startChecksBtn.addEventListener('click', startChecks);
+    els.startSitemapBtn.addEventListener('click', startSitemapAudit);
+    els.cancelBtn.addEventListener('click', cancelJob);
+    els.loadDemoBtn.addEventListener('click', loadExistingJob);
+    els.refreshBtn.addEventListener('click', refreshAll);
+    els.searchInput.addEventListener('input', renderTable);
+
+    renderOverview();
+    renderIssueSummary([]);
+    renderHostSection([]);
+    renderSitemapSection();
+    renderTable();
+  </script>
+</body>
+</html>
