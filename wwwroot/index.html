@@ -963,7 +963,7 @@
             }
 
             const percent = hasNumericProgress
-                ? Math.max(0, Math.min(99, Math.round((processed / total) * 100)))
+                ? Math.max(0, Math.min(100, Math.round((processed / total) * 100)))
                 : 10;
             const text = hasNumericProgress
                 ? `Выполняется этап: ${stage} (${processed}/${total})`
@@ -1236,6 +1236,7 @@
             els.sitemapProgressBar.style.width = `${progress.percent}%`;
             els.sitemapProgressText.textContent = progress.text || 'Прогресс появится после запуска.';
 
+
             if (!result) {
                 els.sitemapFilesCounter.textContent = '0 файлов';
                 els.sitemapFilesCounter.className = 'status-pill status-none';
@@ -1380,10 +1381,16 @@
             }
 
             const result = await api(`/api/crawl/${state.jobId}/sitemap-audit/result`).catch(() => null);
-            const looksLikeReport = result && typeof result === 'object' && (
-                Object.prototype.hasOwnProperty.call(result, 'sitemapFilesCount') ||
-                Object.prototype.hasOwnProperty.call(result, 'SitemapFilesCount')
-            );
+            const looksLikeReport =
+                result &&
+                typeof result === 'object' &&
+                (
+                    'sitemapFilesCount' in result ||
+                    'SitemapFilesCount' in result ||
+                    'sitemapFiles' in result ||
+                    'totalElementsInSitemaps' in result ||
+                    'htmlPagesCountEstimated' in result
+                );
             state.sitemap.result = looksLikeReport ? result : null;
 
 
@@ -1459,7 +1466,7 @@
             if (!state.jobId) return;
             try {
                 await api(`/api/crawl/${state.jobId}/checks/start`, { method: 'POST' });
-                await api(`/api/crawl/${state.jobId}/sitemap-audit/start`, { method: 'POST' }).catch(() => null);
+                
                 await refreshAll();
                 startPolling();
             } catch (error) {

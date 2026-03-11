@@ -316,15 +316,23 @@ namespace Crawler_project.Services
 
             await ForEachConcurrentAsync(crawlSample, _opt.MaxConcurrentRequests, ct, async url =>
             {
-                if (sitemapFound && sitemapUrls.Contains(url)) return;
-
-                var idx = await CheckIndexabilityAsync(http, robots, url, ct);
-                if (idx.IsIndexable)
-                    indexableButNotInSitemap.Add(url);
-
-                var done = Interlocked.Increment(ref processedCrawl);
-                if (onProgress is not null && (done % _opt.ProgressReportEvery == 0 || done == totalCrawl))
-                    await onProgress(new SitemapAuditProgress("indexability:crawl", totalCrawl, done, totalCrawl - done));
+                try
+                {
+                    // URL уже есть в sitemap — просто пропускаем проверку,
+                    // но обязательно считаем его как обработанный элемент этапа.
+                    if (!(sitemapFound && sitemapUrls.Contains(url)))
+                    {
+                        var idx = await CheckIndexabilityAsync(http, robots, url, ct);
+                        if (idx.IsIndexable)
+                            indexableButNotInSitemap.Add(url);
+                    }
+                }
+                finally
+                {
+                    var done = Interlocked.Increment(ref processedCrawl);
+                    if (onProgress is not null && (done % _opt.ProgressReportEvery == 0 || done == totalCrawl))
+                        await onProgress(new SitemapAuditProgress("indexability:crawl", totalCrawl, done, totalCrawl - done));
+                }
             });
 
 

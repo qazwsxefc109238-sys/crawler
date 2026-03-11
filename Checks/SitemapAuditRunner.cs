@@ -85,6 +85,11 @@ namespace Crawler_project.Services
                             st.Report = report;
                             st.Status = SitemapAuditRunStatus.Completed;
                             st.Stage = "done";
+
+                            // Гарантируем корректный финальный прогресс
+                            if (st.Total > 0)
+                                st.Processed = st.Total;
+
                             st.FinishedAtUtc = DateTimeOffset.UtcNow;
                         }
                     }
