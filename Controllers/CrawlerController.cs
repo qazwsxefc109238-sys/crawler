@@ -98,17 +98,26 @@ namespace Crawler_project.Controllers
             if (job is null) return NotFound();
 
             return new CrawlStatusResponse(
-                job.JobId,
-                job.State.ToString(),
-                job.StartUrl,
-                job.MaxPages,
-                job.Workers,
-                Visited: job.VisitedCount,
-                Discovered: job.Discovered.Count,
-                job.StartedAt,
-                job.FinishedAt,
-                job.Error
-            );
+            job.JobId,
+            job.State.ToString(),
+            job.StartUrl,
+            job.MaxPages,
+            job.Workers,
+            Visited: job.VisitedCount,
+            Discovered: job.Discovered.Count,
+            job.StartedAt,
+            job.FinishedAt,
+            job.Error,
+            BootstrapFromSitemap: job.BootstrapFromSitemap,
+            AllowQueryUrls: job.AllowQueryUrls,
+            SeededFromSitemap: job.SeededFromSitemap,
+            SkippedByRobots: job.SkippedByRobots,
+            SkippedExternalHost: job.SkippedExternalHost,
+            SkippedQueryUrls: job.SkippedQueryUrls,
+            SkippedNonHtml: job.SkippedNonHtml,
+            SkippedHttpErrors: job.SkippedHttpErrors,
+            TruncatedHtmlPages: job.TruncatedHtmlPages
+);
         }
 
         [HttpGet("{jobId:guid}/urls")]

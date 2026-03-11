@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using HtmlAgilityPack;
 using static Crawler_project.Models.DTO;
 using Crawler_project.Checks;
+using System.Xml.Linq;
 using Crawler_project.Services;
 namespace Crawler_project.Models
 {
@@ -18,6 +19,18 @@ namespace Crawler_project.Models
 
     public sealed class CrawlJob //класс с параметрами нашего кравлера
     {
+
+        public bool BootstrapFromSitemap { get; init; } = true;
+        public bool AllowQueryUrls { get; init; } = false;
+
+       
+        public int SkippedByRobots;
+        public int SkippedExternalHost;
+        public int SkippedQueryUrls;
+        public int SkippedNonHtml;
+        public int SkippedHttpErrors;
+        public int TruncatedHtmlPages;
+        public int SeededFromSitemap;
         public Guid JobId { get; init; }
         public string StartUrl { get; init; } = "";
         public int MaxPages { get; init; }
@@ -213,7 +226,9 @@ namespace Crawler_project.Models
                 StartUrl = req.StartUrl,
                 MaxPages = req.MaxPages,
                 Workers = req.Workers,
-                RespectRobots = req.RespectRobots
+                RespectRobots = req.RespectRobots,
+                BootstrapFromSitemap = req.BootstrapFromSitemap,
+                AllowQueryUrls = req.AllowQueryUrls
             };
 
             _jobs[job.JobId] = job;
@@ -301,6 +316,33 @@ namespace Crawler_project.Models
 
                 Enqueue(start);
 
+                if (job.BootstrapFromSitemap)
+                {
+                    try
+                    {
+                        var sitemapUrls = await _crawler.FetchSitemapUrlsAsync(job.StartUrl, http, job.Cts.Token);
+
+                        foreach (var sitemapUrl in sitemapUrls)
+                        {
+                            if (!Uri.TryCreate(sitemapUrl, UriKind.Absolute, out var u))
+                                continue;
+
+                            if (robots != null && !robots.IsAllowed(u))
+                            {
+                                Interlocked.Increment(ref job.SkippedByRobots);
+                                continue;
+                            }
+
+                            Enqueue(sitemapUrl);
+                            Interlocked.Increment(ref job.SeededFromSitemap);
+                        }
+                    }
+                    catch
+                    {
+                        // sitemap bootstrap не должен валить весь crawl
+                    }
+                }
+
                 var cts = job.Cts;
                 var workers = Math.Max(1, job.Workers);
 
@@ -318,17 +360,42 @@ namespace Crawler_project.Models
                                 // лимит страниц: НЕ cancel токен, а просто перестаём реально парсить
                                 Interlocked.Increment(ref job.VisitedCount);
 
-                                var links = await _crawler.ParseRun(url, http, cts.Token);
+                                var parse = await _crawler.ParseRun(url, http, job.AllowQueryUrls, cts.Token);
 
-                                foreach (var link in links)
+                                if (parse.WasHttpError)
+                                    Interlocked.Increment(ref job.SkippedHttpErrors);
+
+                                if (parse.WasNonHtml)
+                                    Interlocked.Increment(ref job.SkippedNonHtml);
+
+                                if (parse.WasHtmlTruncated)
+                                    Interlocked.Increment(ref job.TruncatedHtmlPages);
+
+                                foreach (var link in parse.Links)
                                 {
                                     var norm = _crawler.Normalize(link);
                                     if (norm is null) continue;
 
                                     if (!Uri.TryCreate(norm, UriKind.Absolute, out var u)) continue;
-                                    if (robots != null && !robots.IsAllowed(u)) continue;
 
-                                    // добавляем только внутренние (у тебя уже фильтр по host внутри ParseRun, но пусть будет)
+                                    if (!u.Host.Equals(new Uri(job.StartUrl).Host, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        Interlocked.Increment(ref job.SkippedExternalHost);
+                                        continue;
+                                    }
+
+                                    if (!job.AllowQueryUrls && !string.IsNullOrEmpty(u.Query))
+                                    {
+                                        Interlocked.Increment(ref job.SkippedQueryUrls);
+                                        continue;
+                                    }
+
+                                    if (robots != null && !robots.IsAllowed(u))
+                                    {
+                                        Interlocked.Increment(ref job.SkippedByRobots);
+                                        continue;
+                                    }
+
                                     Enqueue(norm);
                                 }
                             }
@@ -374,33 +441,53 @@ namespace Crawler_project.Models
 
     }
 
+    sealed class ParseRunResult
+    {
+        public string[] Links { get; init; } = Array.Empty<string>();
+        public bool WasHtmlTruncated { get; init; }
+        public bool WasNonHtml { get; init; }
+        public bool WasHttpError { get; init; }
+    }
     class Crawler //Тут все шаблоны, фильтры и нормализация ссылок
     {
         public int MaxPages { get; set; } = 1000;
 
-        public async Task<string[]> ParseRun(string url, HttpClient http, CancellationToken ct)
+        public async Task<ParseRunResult> ParseRun(string url, HttpClient http, bool allowQueryUrls, CancellationToken ct)
         {
             var normalized = Normalize(url);
-            if (normalized is null) return Array.Empty<string>();
+            if (normalized is null)
+                return new ParseRunResult();
 
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Get, normalized);
                 using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
 
-                // если режут (403/503) — просто не вытаскиваем ссылки с этой страницы
                 if (!resp.IsSuccessStatusCode)
-                    return Array.Empty<string>();
+                {
+                    return new ParseRunResult
+                    {
+                        WasHttpError = true
+                    };
+                }
 
                 var ctHeader = resp.Content.Headers.ContentType?.MediaType ?? "";
                 if (!ctHeader.Contains("html", StringComparison.OrdinalIgnoreCase))
-                    return Array.Empty<string>();
+                {
+                    return new ParseRunResult
+                    {
+                        WasNonHtml = true
+                    };
+                }
 
                 var html = await resp.Content.ReadAsStringAsync(ct);
 
-                // защита от очень больших HTML
+                var wasTruncated = false;
                 if (html.Length > 1_500_000)
+                {
                     html = html.Substring(0, 1_500_000);
+                    wasTruncated = true;
+                }
 
                 var doc = new HtmlDocument
                 {
@@ -422,22 +509,108 @@ namespace Crawler_project.Models
                     .Select(h => Uri.TryCreate(baseUri, h, out var abs) ? abs : null)
                     .Where(u => u is not null)
                     .Where(u => u!.Host.Equals(baseUri.Host, StringComparison.OrdinalIgnoreCase))
-                    .Where(u => string.IsNullOrEmpty(u!.Query))
+                    .Where(u => allowQueryUrls || string.IsNullOrEmpty(u!.Query))
                     .Select(u => u!.AbsoluteUri)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray()
                     ?? Array.Empty<string>();
 
-                return links;
+                return new ParseRunResult
+                {
+                    Links = links,
+                    WasHtmlTruncated = wasTruncated
+                };
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"__Error__ {normalized} --> {ex.Message}");
-                return Array.Empty<string>();
+                return new ParseRunResult
+                {
+                    WasHttpError = true
+                };
             }
         }
 
+        public async Task<string[]> FetchSitemapUrlsAsync(string startUrl, HttpClient http, CancellationToken ct)
+        {
+            var start = Normalize(startUrl);
+            if (start is null) return Array.Empty<string>();
 
+            var baseUri = new Uri(start);
+            var roots = new[]
+            {
+        $"{baseUri.Scheme}://{baseUri.Host}/sitemap.xml",
+        $"{baseUri.Scheme}://{baseUri.Host}/sitemap_index.xml"
+    };
+
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var queue = new Queue<string>(roots);
+            var seenSitemaps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            while (queue.Count > 0 && seenSitemaps.Count < 50)
+            {
+                var sitemapUrl = queue.Dequeue();
+                if (!seenSitemaps.Add(sitemapUrl))
+                    continue;
+
+                try
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get, sitemapUrl);
+                    using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+                    if (!resp.IsSuccessStatusCode)
+                        continue;
+
+                    var xml = await resp.Content.ReadAsStringAsync(ct);
+                    if (string.IsNullOrWhiteSpace(xml))
+                        continue;
+
+                    var xdoc = XDocument.Parse(xml);
+
+                    var locs = xdoc
+                        .Descendants()
+                        .Where(x => x.Name.LocalName == "loc")
+                        .Select(x => (x.Value ?? "").Trim())
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .ToArray();
+
+                    var isIndex = xdoc.Descendants().Any(x => x.Name.LocalName == "sitemap");
+                    var isUrlSet = xdoc.Descendants().Any(x => x.Name.LocalName == "url");
+
+                    if (isIndex)
+                    {
+                        foreach (var loc in locs)
+                        {
+                            if (Uri.TryCreate(loc, UriKind.Absolute, out var sm) &&
+                                sm.Host.Equals(baseUri.Host, StringComparison.OrdinalIgnoreCase))
+                            {
+                                queue.Enqueue(sm.AbsoluteUri);
+                            }
+                        }
+                    }
+
+                    if (isUrlSet)
+                    {
+                        foreach (var loc in locs)
+                        {
+                            var norm = Normalize(loc);
+                            if (norm is null) continue;
+
+                            if (Uri.TryCreate(norm, UriKind.Absolute, out var u) &&
+                                u.Host.Equals(baseUri.Host, StringComparison.OrdinalIgnoreCase))
+                            {
+                                result.Add(norm);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // тихо пропускаем битые/недоступные sitemap
+                }
+            }
+
+            return result.ToArray();
+        }
 
         public string? Normalize(string input) //ссылки могут быть разными, нам нужно нормализовать, тобишь добавить https:// если нет, убрать порты, и т.д.
         {

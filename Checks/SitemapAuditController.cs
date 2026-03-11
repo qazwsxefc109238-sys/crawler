@@ -234,7 +234,8 @@ namespace Crawler_project.Services
 
             // 2) Загружаем/парсим sitemap (включая index)
             var (sitemapsProcessed, sitemapUrls, totalElements, htmlEstimated, parseErrors, parseWarnings, hasSitemapXml) =
-                await LoadAndParseSitemapsAsync(host, sitemapCandidates, ct);
+                await LoadAndParseSitemapsAsync(host, sitemapCandidates, ct, onProgress);
+
 
             errors.AddRange(parseErrors);
             warnings.AddRange(parseWarnings);
@@ -282,23 +283,13 @@ namespace Crawler_project.Services
             var crawlSample = crawledSet.Take(_opt.MaxIndexabilityChecksFromCrawl).ToList();
             var blockedOrNoindexButInSitemap = new ConcurrentBag<string>();
 
-            var sitemapSample = _opt.FullIndexabilityScan ? sitemapUrls.ToList() : sitemapUrls.Take(_opt.MaxIndexabilityChecksFromSitemap).ToList();
+            ///
+            var sitemapSample = _opt.FullIndexabilityScan
+    ? sitemapUrls.ToList()
+    : sitemapUrls.Take(_opt.MaxIndexabilityChecksFromSitemap).ToList();
+
             var processedSitemap = 0;
             var totalSitemap = sitemapSample.Count;
-            if (onProgress is not null)
-                await onProgress(new SitemapAuditProgress("indexability:sitemap", totalSitemap, 0, totalSitemap));
-
-            await ForEachConcurrentAsync(sitemapSample, _opt.MaxConcurrentRequests, ct, async url =>
-            {
-                var idx = await CheckIndexabilityAsync(http, robots, url, ct);
-
-                if (idx.IsError)
-                    return; // НЕ считаем как "закрыто", иначе будут ложные срабатывания
-
-                if (idx.IsBlockedOrNoindex)
-                    blockedOrNoindexButInSitemap.Add(url);
-            });
-
 
             if (onProgress is not null)
                 await onProgress(new SitemapAuditProgress("indexability:sitemap", totalSitemap, 0, totalSitemap));
@@ -307,16 +298,16 @@ namespace Crawler_project.Services
             {
                 var idx = await CheckIndexabilityAsync(http, robots, url, ct);
 
-                // важно: ошибки НЕ считаем как "закрыто", иначе будет мусор
                 if (!idx.IsError && idx.IsBlockedOrNoindex)
                     noindexButInSitemap.Add(url);
 
-                // прогресс
                 var done = Interlocked.Increment(ref processedSitemap);
                 if (onProgress is not null && (done % _opt.ProgressReportEvery == 0 || done == totalSitemap))
                     await onProgress(new SitemapAuditProgress("indexability:sitemap", totalSitemap, done, totalSitemap - done));
             });
 
+
+            ///
             var processedCrawl = 0;
             var totalCrawl = crawlSample.Count;
 
@@ -419,7 +410,9 @@ namespace Crawler_project.Services
         // -------------------- sitemap load/parse --------------------
 
         private async Task<(List<string> sitemapsProcessed, HashSet<string> urls, int totalElements, int htmlEstimated, List<string> errors, List<string> warnings, bool hasSitemapXml)>
-            LoadAndParseSitemapsAsync(string host, List<Uri> candidates, CancellationToken ct)
+            LoadAndParseSitemapsAsync(string host, List<Uri> candidates, CancellationToken ct, Func<SitemapAuditProgress, Task>? onProgress = null)
+
+
         {
             bool hasSitemapXml = false;
             var processedSitemaps = new List<string>();
@@ -435,6 +428,9 @@ namespace Crawler_project.Services
 
             var http = _httpFactory.CreateClient("crawler");
             http.Timeout = TimeSpan.FromSeconds(_opt.HttpTimeoutSeconds);
+
+            if (onProgress is not null) await onProgress(new SitemapAuditProgress("sitemap:scan", candidates.Count, 0, candidates.Count));
+
 
             while (queue.Count > 0)
             {
@@ -462,6 +458,7 @@ namespace Crawler_project.Services
                 if (sitemapUrl.AbsolutePath.Equals("/sitemap.xml", StringComparison.OrdinalIgnoreCase))
                     hasSitemapXml = true;
                 processedSitemaps.Add(sitemapKey);
+                if (onProgress is not null) await onProgress(new SitemapAuditProgress("sitemap:scan", processedSitemaps.Count + queue.Count, processedSitemaps.Count, queue.Count));
 
                 try
                 {

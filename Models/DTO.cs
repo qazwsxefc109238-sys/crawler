@@ -7,7 +7,9 @@
         string StartUrl,
         int MaxPages = 1000,
         int Workers = 8,
-        bool RespectRobots = true);
+        bool RespectRobots = true,
+        bool BootstrapFromSitemap = true,
+        bool AllowQueryUrls = false);
 
         public sealed record CrawlStartResponse(
         Guid JobId,
@@ -24,7 +26,16 @@
         int Discovered,
         DateTimeOffset StartedAt,
         DateTimeOffset? FinishedAt,
-        string? Error);
+        string? Error,
+        bool BootstrapFromSitemap,
+        bool AllowQueryUrls,
+        int SeededFromSitemap,
+        int SkippedByRobots,
+        int SkippedExternalHost,
+        int SkippedQueryUrls,
+        int SkippedNonHtml,
+        int SkippedHttpErrors,
+        int TruncatedHtmlPages);
 
         public sealed record PagedUrlsResponse(
         int Total,

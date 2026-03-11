@@ -163,7 +163,7 @@ namespace Crawler_project.Checks
                 //
                 if (!string.IsNullOrWhiteSpace(key))
                     qs += $"&key={Uri.EscapeDataString(key)}";
-                else qs += $"&key=***********";
+                else qs += $"&key=AIzaSyBw6emtAfbWkLXY0FUsN_PiPMFbBCnJbAw";
 
                 for (int attempt = 0; attempt <= _opt.MaxRetries; attempt++)
                 {
