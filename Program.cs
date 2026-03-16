@@ -3,6 +3,8 @@ using Crawler_project.LinkChecks;
 using Crawler_project.Models;
 using Crawler_project.Models.LinkChecks;
 using Crawler_project.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using System.Net;
 
 namespace Crawler_project
@@ -13,7 +15,36 @@ namespace Crawler_project
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            var dbConnectionString = DatabaseConnectionStringResolver.Resolve(builder.Configuration);
+            if (string.IsNullOrWhiteSpace(dbConnectionString))
+            {
+                throw new InvalidOperationException("Database connection string is not configured. Set ConnectionStrings:Default, ConnectionStrings:Postgres, DB_CONNECTION_STRING, or DATABASE_URL.");
+            }
+
+            builder.Services.AddSingleton(new DatabaseOptions
+            {
+                ConnectionString = dbConnectionString
+            });
+
             builder.Services.AddControllers();
+
+            builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
+            builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+
+            builder.Services.AddSingleton<UserAuthService>();
+
+            builder.Services
+                .AddAuthentication(SessionAuthenticationHandler.SchemeName)
+                .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
+                    SessionAuthenticationHandler.SchemeName,
+                    _ => { });
+
+            builder.Services.AddAuthorization(options =>
+            {
+                options.FallbackPolicy = new AuthorizationPolicyBuilder(SessionAuthenticationHandler.SchemeName)
+                    .RequireAuthenticatedUser()
+                    .Build();
+            });
 
             // Core
             builder.Services.AddSingleton<LinkCheckRunner>();
@@ -283,7 +314,7 @@ namespace Crawler_project
             builder.Services.AddSingleton<ILinkCheck, IFrameCheck>();
             builder.Services.AddSingleton<ILinkCheck, ServerErrorLeakCheck>();
             builder.Services.AddSingleton<ILinkCheck, TitleDescriptionChecks>();
-           // builder.Services.AddSingleton<ILinkCheck, H1MissingCheck>();
+            // builder.Services.AddSingleton<ILinkCheck, H1MissingCheck>();
             builder.Services.AddSingleton<ILinkCheck, DoctypeAndSizeChecks>();
             builder.Services.AddSingleton<ILinkCheck, ImagesAltTitleChecks>();
             builder.Services.AddSingleton<ILinkCheck, LinksTextAndCountsCheck>();
@@ -333,11 +364,13 @@ namespace Crawler_project
             }
             //app.Run("http://0.0.0.0:7168");
             //app.UseHttpsRedirection();
-    
+
             app.UseDefaultFiles();
             app.UseStaticFiles();
 
+            app.UseAuthentication();
             app.UseAuthorization();
+
             app.MapControllers();
 
             app.Run();

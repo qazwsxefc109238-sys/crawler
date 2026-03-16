@@ -1,7 +1,9 @@
+using Crawler_project.Checks;
 using Crawler_project.Models;
+using Crawler_project.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using static Crawler_project.Models.DTO;
-using Crawler_project.Checks;
 namespace Crawler_project.Controllers
 {
     
@@ -10,7 +12,8 @@ namespace Crawler_project.Controllers
     ///  ороче немного переделанный базовый шаблон контроллера, который идЄт базово при создании проекта с ASP.NET
     /// </summary>
     [ApiController]
-    [Route("api/crawl")] 
+    [Route("api/crawl")]
+    [Authorize(AuthenticationSchemes = SessionAuthenticationHandler.SchemeName)]
     public sealed class CrawlController : ControllerBase
     {
         private readonly JobStore _store;
@@ -86,6 +89,7 @@ namespace Crawler_project.Controllers
 
 
         [HttpGet("info")]
+        [AllowAnonymous]
         public string Get()
         {
             return Logo.Show();

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Подтверждение почты</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; background:#f6f8fb; margin:0; padding:40px; }
+    .card { max-width:520px; margin:0 auto; background:#fff; border-radius:16px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.08); }
+    h1 { margin-top:0; font-size:24px; }
+    .muted { color:#667085; }
+    .ok { color:#067647; }
+    .err { color:#b42318; }
+    button { margin-top:16px; padding:10px 16px; border:0; border-radius:10px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Подтверждение почты</h1>
+    <p id="status" class="muted">Проверяем ссылку...</p>
+    <button id="goLogin" style="display:none;">Перейти ко входу</button>
+  </div>
+
+  <script>
+    async function confirmEmail() {
+      const params = new URLSearchParams(window.location.search);
+      const email = params.get('email');
+      const token = params.get('token');
+
+      const status = document.getElementById('status');
+      const goLogin = document.getElementById('goLogin');
+
+      if (!email || !token) {
+        status.textContent = 'В ссылке отсутствуют email или token.';
+        status.className = 'err';
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/auth/confirm-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, token })
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Не удалось подтвердить email.');
+        }
+
+        status.textContent = 'Почта успешно подтверждена. Теперь можно войти в аккаунт.';
+        status.className = 'ok';
+        goLogin.style.display = 'inline-block';
+        goLogin.onclick = () => window.location.href = '/';
+      } catch (error) {
+        status.textContent = error.message || 'Ссылка недействительна или истекла.';
+        status.className = 'err';
+      }
+    }
+
+    confirmEmail();
+  </script>
+</body>
+</html>

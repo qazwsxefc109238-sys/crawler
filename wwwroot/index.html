@@ -117,7 +117,7 @@
       display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px 16px; border-radius: 16px;
       background: var(--surface-2); border: 1px solid var(--line);
     }
-          .summary-item.issue-info {
+      .summary-item.issue-info {
           background: var(--surface-2);
           border: 1px solid var(--line);
       }
@@ -349,13 +349,41 @@
         </aside>
 
         <main class="content">
+
+            <section class="card" id="auth">
+                <div class="card-title">
+                    <h3>Пользователь и сессия</h3>
+                    <div id="authStatusPill" class="status-pill status-none">Гость</div>
+                </div>
+                <div class="grid-3">
+                    <div>
+                        <label for="authEmail">Email</label>
+                        <input id="authEmail" type="email" placeholder="you@example.com" />
+                    </div>
+                    <div>
+                        <label for="authPassword">Пароль</label>
+                        <input id="authPassword" type="password" placeholder="Минимум 8 символов" />
+                    </div>
+                    <div>
+                        <label for="authDisplayName">Имя (для регистрации)</label>
+                        <input id="authDisplayName" type="text" placeholder="Ваше имя" />
+                    </div>
+                </div>
+                <div class="hero-actions">
+                    <button class="btn btn-primary" id="registerBtn">Регистрация</button>
+                    <button class="btn btn-secondary" id="loginBtn">Вход</button>
+                    <button class="btn btn-secondary" id="logoutBtn" disabled>Выход</button>
+                </div>
+                <div class="muted" id="authInfo" style="margin-top:10px;font-size:13px;">Сессия не активна.</div>
+            </section>
+
             <section class="hero" id="start">
                 <div class="hero-top">
                     <div>
                         <div class="eyebrow">Audit dashboard</div>
                         <h2>Управление процессом</h2>
                         <p>
-                           Сервис делает следующее: запускает краул, отслеживает статус, начинает проверки,
+                            Сервис делает следующее: запускает краул, отслеживает статус, начинает проверки,
                             отдельно показывает проблемы хоста, PageSpeed и sitemap, а также собирает результат по URL.
                         </p>
                     </div>
@@ -640,14 +668,28 @@
             issueModal: {
                 code: null,
                 title: null,
-                pages: []
-            }
+                pages: [],
+                source: 'issues',
+                csvMode: 'issue-pages',
+                csvUrl: '',
+                csvRows: []
+
+            },
+            auth: { sessionToken: localStorage.getItem('crawler.sessionToken') || null, user: null }
         };
 
         const els = {
             startUrl: document.getElementById('startUrl'),
             maxPages: document.getElementById('maxPages'),
             workers: document.getElementById('workers'),
+            authEmail: document.getElementById('authEmail'),
+            authPassword: document.getElementById('authPassword'),
+            authDisplayName: document.getElementById('authDisplayName'),
+            registerBtn: document.getElementById('registerBtn'),
+            loginBtn: document.getElementById('loginBtn'),
+            logoutBtn: document.getElementById('logoutBtn'),
+            authStatusPill: document.getElementById('authStatusPill'),
+            authInfo: document.getElementById('authInfo'),
             startBtn: document.getElementById('startBtn'),
             cancelBtn: document.getElementById('cancelBtn'),
             startChecksBtn: document.getElementById('startChecksBtn'),
@@ -717,6 +759,29 @@
         };
 
         const safe = (value) => value === null || value === undefined || value === '' ? '—' : String(value);
+
+        function normalizeSitemapStatus(raw) {
+            if (raw === null || raw === undefined || raw === '') return '';
+
+            if (typeof raw === 'number' && Number.isFinite(raw)) {
+                switch (raw) {
+                    case 0: return 'notstarted';
+                    case 1: return 'running';
+                    case 2: return 'completed';
+                    case 3: return 'failed';
+                    case 4: return 'canceled';
+                    default: return String(raw).toLowerCase();
+                }
+            }
+
+            const asNumber = Number(raw);
+            if (Number.isFinite(asNumber) && String(raw).trim() !== '') {
+                return normalizeSitemapStatus(asNumber);
+            }
+
+            return String(raw).toLowerCase();
+        }
+
         const escapeHtml = (str) => safe(str)
             .replaceAll('&', '&amp;')
             .replaceAll('<', '&lt;')
@@ -726,6 +791,20 @@
 
         const hostPrefixes = ['SSL', 'TLS', 'CERT', 'WHOIS', 'DNS', 'RBL', 'DNSBL', 'HOST', 'IP_', 'IP', 'PAGESPEED', 'PSI', 'PORT_443'];
         const singletonIssueCodes = new Set(['SSL_EXPIRING_SOON']);
+        const infoIssueCodes = new Set([
+            'HOST_COUNTRY',
+            'HOST_IPS',
+            'HOST_NS',
+            'DOMAIN_CREATED_AT',
+            'DOMAIN_UPDATED_AT',
+            'DOMAIN_EXPIRES_AT',
+            'WHOIS_REGISTRAR',
+            'WHOIS_REGISTRANT',
+            'WHOIS_STATUS',
+            'WHOIS_NAME_SERVERS',
+            'RBL_CLEAN',
+            'HOSTING_RBL_CLEAN'
+        ]);
         function statusClass(name) {
             const key = String(name || '').toLowerCase().replace(/\s+/g, '');
             return `status-pill status-${key || 'none'}`;
@@ -738,7 +817,7 @@
 
         async function api(path, options = {}) {
             const response = await fetch(`${state.apiBase}${path}`, {
-                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                headers: { 'Content-Type': 'application/json', ...(state.auth.sessionToken ? { 'X-Session-Token': state.auth.sessionToken } : {}), ...(options.headers || {}) },
                 ...options
             });
             if (!response.ok) {
@@ -804,8 +883,9 @@
         }
 
         function getIssueSeverity(code) {
-
             const c = String(code || '').toUpperCase();
+
+            if (infoIssueCodes.has(c)) return 'info';
 
             const warnings = [
                 'SSL_EXPIRING_SOON',
@@ -881,11 +961,89 @@
             });
         }
 
-        function openIssueModal({ code, title, pages }) {
+        function collectRowIssues(row) {
+            const issues = Array.isArray(row?.issues) ? row.issues : [];
+            const errorText = safe(row?.error);
+
+            const rows = issues.map(issue => ({
+                code: issue?.code || '',
+                message: issue?.message || '',
+                scope: isHostIssue(issue) ? 'host' : 'page'
+            }));
+
+            if (errorText) {
+                rows.push({
+                    code: 'REQUEST_ERROR',
+                    message: errorText,
+                    scope: 'request'
+                });
+            }
+
+            return rows;
+        }
+
+        function collectSitemapPages(kind) {
+            const result = state.sitemap?.result || {};
+            const key = String(kind || '').toUpperCase();
+
+            switch (key) {
+                case 'SITEMAP_FILES':
+                    return (result.sitemapFiles || []).map(url => ({
+                        url,
+                        finalUrl: url,
+                        message: 'Файл sitemap'
+                    }));
+
+                case 'IN_SITEMAP_NOT_IN_CRAWL':
+                    return (result.inSitemapButNotFoundByCrawlSample || []).map(url => ({
+                        url,
+                        finalUrl: url,
+                        message: 'Есть в sitemap, но не найдено краулом'
+                    }));
+
+                case 'INDEXABLE_NOT_IN_SITEMAP':
+                    return (result.indexableButNotInSitemapSample || []).map(url => ({
+                        url,
+                        finalUrl: url,
+                        message: 'Indexable, но отсутствует в sitemap'
+                    }));
+
+                case 'NOINDEX_IN_SITEMAP':
+                    return (result.noindexButInSitemapSample || []).map(url => ({
+                        url,
+                        finalUrl: url,
+                        message: 'Noindex / blocked, но присутствует в sitemap'
+                    }));
+
+                case 'SITEMAP_ERRORS':
+                    return (result.errors || []).map((text, i) => ({
+                        url: `Ошибка #${i + 1}`,
+                        finalUrl: '',
+                        message: text
+                    }));
+
+                case 'SITEMAP_WARNINGS':
+                    return (result.warnings || []).map((text, i) => ({
+                        url: `Warning #${i + 1}`,
+                        finalUrl: '',
+                        message: text
+                    }));
+
+                default:
+                    return [];
+            }
+        }
+
+
+
+        function openIssueModal({code,title,pages,source = 'issues',csvMode = 'issue-pages',csvUrl = '',csvRows = []}) {
             state.issueModal.code = code || null;
             state.issueModal.title = title || code || 'Issue';
             state.issueModal.pages = Array.isArray(pages) ? pages : [];
-
+            state.issueModal.source = source;
+            state.issueModal.csvMode = csvMode || 'issue-pages';
+            state.issueModal.csvUrl = csvUrl || '';
+            state.issueModal.csvRows = Array.isArray(csvRows) ? csvRows : [];
             els.issueModalTitle.textContent = state.issueModal.title;
             els.issueModalMeta.textContent = `${state.issueModal.pages.length} URL`;
 
@@ -893,11 +1051,11 @@
                 els.issueModalList.innerHTML = '<div class="modal-empty">Нет страниц для отображения.</div>';
             } else {
                 els.issueModalList.innerHTML = state.issueModal.pages.map((item, index) => `
-          <div class="modal-url-item">
-            <div><strong>${index + 1}.</strong> ${escapeHtml(item.url || item.finalUrl || '—')}</div>
-            ${item.message ? `<div class="muted" style="margin-top:6px;">${escapeHtml(item.message)}</div>` : ''}
-          </div>
-        `).join('');
+                  <div class="modal-url-item">
+                    <div><strong>${index + 1}.</strong> ${escapeHtml(item.url || item.finalUrl || '—')}</div>
+                    ${item.message ? `<div class="muted" style="margin-top:6px;">${escapeHtml(item.message)}</div>` : ''}
+                  </div>
+                `).join('');
             }
 
             els.issueModalBackdrop.classList.add('open');
@@ -912,21 +1070,37 @@
         function downloadIssueModalCsv() {
             const code = state.issueModal.code || 'issue';
             const pages = Array.isArray(state.issueModal.pages) ? state.issueModal.pages : [];
+            const csvMode = state.issueModal.csvMode || 'issue-pages';
+            const csvUrl = state.issueModal.csvUrl || '';
+            const csvRows = Array.isArray(state.issueModal.csvRows) ? state.issueModal.csvRows : [];
+
             const siteName =
                 normalizeFilePart(state.crawl?.host) ||
                 normalizeFilePart(new URL(state.crawl?.startUrl || els.startUrl.value || 'https://example.com').hostname);
 
-            const fileName = `${siteName}_${normalizeFilePart(code)}_${formatDateDdMm()}.csv`;
+            let fileName = `${siteName}_${normalizeFilePart(code)}_${formatDateDdMm()}.csv`;
+            let rows = [];
 
-            const rows = [
-                ['Ссылка', 'Финальная Ссылка', 'Код Ошибки', 'Сообщение'],
-                ...pages.map(item => [
-                    item.url || '',
-                    item.finalUrl || '',
-                    code,
-                    item.message || ''
-                ])
-            ];
+            if (csvMode === 'url-issues') {
+                fileName = `${siteName}_url_issues_${formatDateDdMm()}.csv`;
+                rows = [
+                    ['Ссылка', 'Ошибка'],
+                    ...csvRows.map(item => [
+                        csvUrl || '',
+                        [item.code, item.message].filter(Boolean).join(' — ')
+                    ])
+                ];
+            } else {
+                rows = [
+                    ['Ссылка', 'Финальная Ссылка', 'Код Ошибки', 'Сообщение'],
+                    ...pages.map(item => [
+                        item.url || '',
+                        item.finalUrl || '',
+                        code,
+                        item.message || ''
+                    ])
+                ];
+            }
 
             const csv = '\uFEFF' + rows.map(row =>
                 row.map(value => {
@@ -947,7 +1121,7 @@
         }
 
         function sitemapProgressMeta(status, hasResult) {
-            const rawStatus = String(status?.status || status?.Status || '').toLowerCase();
+            const rawStatus = normalizeSitemapStatus(status?.status ?? status?.Status);
             const stage = status?.stage || status?.Stage || 'В процессе';
             const total = Number(status?.total ?? status?.Total ?? 0);
             const processed = Number(status?.processed ?? status?.Processed ?? 0);
@@ -1137,8 +1311,12 @@
 
         function renderHostSection(items) {
             const hostGroups = aggregateIssues(items, isHostIssue);
-            els.hostIssuesPill.textContent = `${hostGroups.reduce((sum, g) => sum + g.count, 0)} проблем`;
-            els.hostIssuesPill.className = hostGroups.length ? 'status-pill status-faulted' : 'status-pill status-finished';
+            const problemGroups = hostGroups.filter(g => getIssueSeverity(g.code) !== 'info');
+            const problemCount = problemGroups.reduce((sum, g) => sum + g.count, 0);
+
+            els.hostIssuesPill.textContent = `${problemCount} проблем`;
+            els.hostIssuesPill.className = problemCount ? 'status-pill status-faulted' : 'status-pill status-finished';
+
             els.hostCounter.textContent = hostGroups.length ? `${hostGroups.length} host-кодов` : 'Host: OK';
             els.hostCounter.className = hostGroups.length ? 'status-pill status-running' : 'status-pill status-finished';
 
@@ -1268,22 +1446,31 @@
             els.sitemapProblemsPill.className = problems ? 'status-pill status-faulted' : 'status-pill status-finished';
 
             const summary = [
-                ['Ошибки sitemap', result.errorsCount || 0, (result.errors || [])[0] || 'Нет'],
-                ['Warnings sitemap', result.warningsCount || 0, (result.warnings || [])[0] || 'Нет'],
-                ['Есть в sitemap, но не найдено краулом', result.inSitemapButNotFoundByCrawlCount || 0, 'Сравнение sitemap ↔ crawl'],
-                ['Indexable, но не в sitemap', result.indexableButNotInSitemapCount || 0, 'Страницы стоит добавить в sitemap'],
-                ['Noindex / blocked, но в sitemap', result.noindexButInSitemapCount || 0, 'Стоит проверить индексируемость']
+                ['Ошибки sitemap', result.errorsCount || 0, (result.errors || [])[0] || 'Нет', 'SITEMAP_ERRORS'],
+                ['Warnings sitemap', result.warningsCount || 0, (result.warnings || [])[0] || 'Нет', 'SITEMAP_WARNINGS'],
+                ['Есть в sitemap, но не найдено краулом', result.inSitemapButNotFoundByCrawlCount || 0, 'Сравнение sitemap ↔ crawl', 'IN_SITEMAP_NOT_IN_CRAWL'],
+                ['Indexable, но не в sitemap', result.indexableButNotInSitemapCount || 0, 'Страницы стоит добавить в sitemap', 'INDEXABLE_NOT_IN_SITEMAP'],
+                ['Noindex / blocked, но в sitemap', result.noindexButInSitemapCount || 0, 'Стоит проверить индексируемость', 'NOINDEX_IN_SITEMAP']
             ];
 
-            els.sitemapSummaryList.innerHTML = summary.map(([label, count, descr]) => `
-            <div class="summary-item">
-              <div>
-                <strong>${escapeHtml(label)}</strong>
-                <small>${escapeHtml(descr)}</small>
-              </div>
-              <div class="badge">${escapeHtml(count)}</div>
+            els.sitemapSummaryList.innerHTML = summary.map(([label, count, descr, code]) => `
+          <div class="summary-item">
+            <div>
+              <strong>${escapeHtml(label)}</strong>
+              <small>${escapeHtml(descr)}</small>
             </div>
-          `).join('');
+            <button
+              class="badge clickable"
+              type="button"
+              data-issue-code="${escapeHtml(code)}"
+              data-issue-scope="sitemap"
+              title="Показать список"
+              ${Number(count) > 0 ? '' : 'disabled'}
+            >
+              ${escapeHtml(count)}
+            </button>
+          </div>
+        `).join('');
 
             const sampleBlocks = [
                 ['Sitemap files', (result.sitemapFiles || []).slice(0, 5)],
@@ -1292,26 +1479,61 @@
                 ['Noindex in sitemap', (result.noindexButInSitemapSample || []).slice(0, 5)]
             ].filter(([, arr]) => arr && arr.length);
 
-            els.sitemapSamplesList.innerHTML = sampleBlocks.length ? sampleBlocks.map(([title, arr]) => `
-            <div class="summary-item" style="align-items:flex-start;">
-              <div>
-                <strong>${escapeHtml(title)}</strong>
-                <div class="sample-list" style="margin-top:10px;">
-                  ${arr.map(url => `<div class="sample-chip"><b>URL</b> ${escapeHtml(url)}</div>`).join('')}
-                </div>
-              </div>
-            </div>
-          `).join('') : '<div class="empty">Нет примеров URL для вывода.</div>';
+            els.sitemapSamplesList.innerHTML = sampleBlocks.length ? sampleBlocks.map(([title, arr, code, total]) => `
+  <div class="summary-item" style="align-items:flex-start;">
+    <div style="width:100%;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;">
+        <strong>${escapeHtml(title)}</strong>
+        <button
+          class="badge clickable"
+          type="button"
+          data-issue-code="${escapeHtml(code)}"
+          data-issue-scope="sitemap"
+          title="Показать список"
+        >
+          ${escapeHtml(total)}
+        </button>
+      </div>
+      <div class="sample-list" style="margin-top:10px;">
+        ${arr.map(url => `<div class="sample-chip"><b>URL</b> <a href="${escapeHtml(url)}">${escapeHtml(url)}</a></div>`).join('')}
+      </div>
+    </div>
+  </div>
+`).join('') : '<div class="empty">Нет примеров URL для вывода.</div>';
 
             els.sitemapSamplingNote.textContent = result.indexabilitySamplingNote || 'Нет данных по выборке';
         }
 
-        function issueColumnHtml(issues) {
-            return issues.length
-                ? `<div class="issue-list">${issues.slice(0, 6).map(issue => `
-                <div class="issue-chip"><b>${escapeHtml(issue.code || 'ISSUE')}</b> ${escapeHtml(issue.message || '')}</div>
-              `).join('')}${issues.length > 6 ? `<div class="muted">+ ещё ${issues.length - 6}</div>` : ''}</div>`
-                : '<span class="muted">—</span>';
+        function issueColumnHtml(issues, row, scopeLabel = '') {
+            if (!issues.length) return '<span class="muted">—</span>';
+
+            const total = issues.length;
+            const preview = issues.slice(0, 4);
+
+            const buttonText = scopeLabel === 'host'
+                ? `Всё инфо (${total})`
+                : `все ошибки (${total})`;
+
+            return `
+      <div class="issue-list">
+        ${preview.map(issue => `
+          <div class="issue-chip"><b>${escapeHtml(issue.code || 'ISSUE')}</b> ${escapeHtml(issue.message || '')}</div>
+        `).join('')}
+        ${total > 4 ? `<div class="muted">+ ещё ${total - 4}</div>` : ''}
+        <div style="margin-top:8px;">
+          <button
+            class="badge clickable"
+            type="button"
+            data-row-issues="1"
+            data-row-url="${escapeHtml(row?.url || row?.finalUrl || '')}"
+            data-row-scope="${escapeHtml(scopeLabel)}"
+            title="${scopeLabel === 'host' ? 'Показать всю информацию по хосту' : 'Показать все ошибки URL'}"
+          >
+            ${buttonText}
+          </button>
+        </div>
+      </div>
+    `;
         }
 
         function renderTable() {
@@ -1320,7 +1542,7 @@
             if (!items.length) {
                 els.resultsBody.innerHTML = `<tr><td colspan="7"><div class="empty">Нет строк для отображения.</div></td></tr>`;
                 return;
-            }
+            } 
 
             els.resultsBody.innerHTML = items.map(row => {
                 const { host, page } = splitIssues(row.issues);
@@ -1330,31 +1552,79 @@
                 <td>${escapeHtml(row.statusCode || '—')}</td>
                 <td>${row.loadSeconds ? `${escapeHtml(row.loadSeconds)} s` : '—'}</td>
                 <td><code>${escapeHtml(row.finalUrl || '')}</code></td>
-                <td>${issueColumnHtml(host)}</td>
-                <td>${issueColumnHtml(page)}</td>
+                <td>${issueColumnHtml(host, row, 'host')}</td>
+                <td>${issueColumnHtml(page, row, 'page')}</td>
                 <td>${row.error ? `<span class="muted">${escapeHtml(row.error)}</span>` : '—'}</td>
               </tr>
             `;
             }).join('');
         }
         document.addEventListener('click', (event) => {
+            const rowBtn = event.target.closest('[data-row-issues="1"]');
+            if (rowBtn) {
+                const rowUrl = rowBtn.dataset.rowUrl || '';
+                const row = state.results.find(item => (item.url || item.finalUrl || '') === rowUrl);
+
+                if (!row) return;
+
+                const rowIssues = collectRowIssues(row);
+                const pages = rowIssues.map(item => ({
+                    url: item.code || 'ISSUE',
+                    finalUrl: '',
+                    message: item.message || ''
+                }));
+
+                openIssueModal({
+                    code: 'URL_ISSUES',
+                    title: `Ошибки URL: ${row.url || row.finalUrl || '—'}`,
+                    pages,
+                    source: 'url-row',
+                    csvMode: 'url-issues',
+                    csvUrl: row.url || row.finalUrl || '',
+                    csvRows: rowIssues
+                });
+                return;
+            }
+
             const btn = event.target.closest('.badge.clickable');
-            if (!btn) return;
+            if (!btn || btn.disabled) return;
 
             const code = btn.dataset.issueCode;
             const scope = btn.dataset.issueScope;
 
-            const pages = collectIssuePages(
-                code,
-                scope === 'host' ? isHostIssue : (issue) => !isHostIssue(issue)
-            );
+            let pages = [];
+            let title = `Страницы с ошибкой: ${code}`;
+            let source = 'issues';
+
+            if (scope === 'sitemap') {
+                pages = collectSitemapPages(code);
+                source = 'sitemap';
+
+                const sitemapTitles = {
+                    SITEMAP_FILES: 'Sitemap files',
+                    SITEMAP_ERRORS: 'Ошибки sitemap',
+                    SITEMAP_WARNINGS: 'Warnings sitemap',
+                    IN_SITEMAP_NOT_IN_CRAWL: 'Есть в sitemap, но не найдено краулом',
+                    INDEXABLE_NOT_IN_SITEMAP: 'Indexable, но не в sitemap',
+                    NOINDEX_IN_SITEMAP: 'Noindex / blocked, но в sitemap'
+                };
+
+                title = sitemapTitles[code] || `Sitemap: ${code}`;
+            } else {
+                pages = collectIssuePages(
+                    code,
+                    scope === 'host' ? isHostIssue : (issue) => !isHostIssue(issue)
+                );
+            }
 
             openIssueModal({
                 code,
-                title: `Страницы с ошибкой: ${code}`,
-                pages
+                title,
+                pages,
+                source
             });
         });
+
         async function loadPageSpeed() {
             if (!state.jobId) return;
             const [mobile, desktop] = await Promise.all([
@@ -1371,7 +1641,7 @@
             const status = await api(`/api/crawl/${state.jobId}/sitemap-audit/status`).catch(() => null);
             state.sitemap.status = status;
 
-            const rawStatus = String(status?.status || status?.Status || '').toLowerCase();
+            const rawStatus = normalizeSitemapStatus(status?.status ?? status?.Status);
             const isDone = ['completed', 'finished', 'done', 'success', 'succeeded'].includes(rawStatus);
 
 
@@ -1426,7 +1696,7 @@
                 await refreshAll();
                 const crawlDone = ['Finished', 'Canceled', 'Faulted'].includes(state.crawl?.state);
                 const checksDone = !state.checks || ['Finished', 'Canceled', 'Faulted', 'None'].includes(state.checks?.state);
-                const sitemapStatusValue = String(state.sitemap?.status?.status || state.sitemap?.status?.Status || '').toLowerCase();
+                const sitemapStatusValue = normalizeSitemapStatus(state.sitemap?.status?.status ?? state.sitemap?.status?.Status);
                 const sitemapDone = !state.sitemap?.status || ['completed', 'failed', 'canceled', 'notstarted', ''].includes(sitemapStatusValue);
                 if (crawlDone && checksDone && sitemapDone) stopPolling();
             }, 3000);
@@ -1437,8 +1707,120 @@
             state.poller = null;
         }
 
-        async function startCrawl() {
+        function renderAuth() {
+            const isAuthed = !!state.auth.user;
+
+            if (isAuthed) {
+                setStatusPill(els.authStatusPill, 'Авторизован');
+                els.authInfo.textContent = `${state.auth.user.displayName || state.auth.user.email} (${state.auth.user.role})`;
+                els.logoutBtn.disabled = false;
+            } else {
+                setStatusPill(els.authStatusPill, 'Гость');
+                els.authInfo.textContent = 'Сессия не активна. Для запуска аудита войдите в аккаунт.';
+                els.logoutBtn.disabled = true;
+            }
+
+            els.startBtn.disabled = !isAuthed;
+            els.loadDemoBtn.disabled = !isAuthed;
+            els.startChecksBtn.disabled = !isAuthed || !state.jobId;
+            els.startSitemapBtn.disabled = !isAuthed || !state.jobId;
+            els.cancelBtn.disabled = !isAuthed || !state.jobId;
+        }
+
+        async function registerUser() {
             try {
+                const payload = {
+                    email: els.authEmail.value.trim(),
+                    password: els.authPassword.value,
+                    displayName: els.authDisplayName.value.trim() || null
+                };
+
+                const data = await api('/api/auth/register', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                state.auth.sessionToken = null;
+                state.auth.user = null;
+                localStorage.removeItem('crawler.sessionToken');
+
+                renderAuth();
+                alert(`Регистрация завершена. Подтвердите email ${data.email}, затем выполните вход.`);
+            } catch (error) {
+                alert(`Не удалось зарегистрироваться: ${error.message}`);
+            }
+        }
+
+        async function loginUser() {
+            try {
+                const payload = {
+                    email: els.authEmail.value.trim(),
+                    password: els.authPassword.value
+                };
+
+                const data = await api('/api/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                state.auth.sessionToken = data.sessionToken;
+                state.auth.user = data.user;
+                localStorage.setItem('crawler.sessionToken', data.sessionToken);
+                renderAuth();
+            } catch (error) {
+                alert(`Не удалось выполнить вход: ${error.message}. Возможно, почта ещё не подтверждена.`);
+            }
+        }
+
+        async function logoutUser() {
+            const token = state.auth.sessionToken;
+            if (!token) return;
+
+            try {
+                await api('/api/auth/logout', {
+                    method: 'POST',
+                    body: JSON.stringify({ sessionToken: token })
+                });
+            } catch { }
+
+            state.auth.sessionToken = null;
+            state.auth.user = null;
+            localStorage.removeItem('crawler.sessionToken');
+            renderAuth();
+        }
+
+        async function restoreSession() {
+            if (!state.auth.sessionToken) {
+                renderAuth();
+                return;
+            }
+
+            try {
+                state.auth.user = await api('/api/auth/me');
+            } catch {
+                state.auth.sessionToken = null;
+                localStorage.removeItem('crawler.sessionToken');
+                state.auth.user = null;
+            }
+
+            renderAuth();
+        }
+
+        function closeSessionOnExit() {
+            const token = state.auth.sessionToken;
+            if (!token) return;
+
+            const payload = JSON.stringify({ sessionToken: token });
+            navigator.sendBeacon('/api/auth/session/close', new Blob([payload], { type: 'application/json' }));
+        }
+
+        async function startCrawl() {
+            if (!state.auth.user) {
+                alert('Сначала войдите в аккаунт.');
+                return;
+            }
+            try {
+             
                 const payload = {
                     startUrl: els.startUrl.value.trim(),
                     maxPages: Number(els.maxPages.value || 100),
@@ -1463,6 +1845,10 @@
         }
 
         async function startChecks() {
+            if (!state.auth.user) {
+                alert('Сначала войдите в аккаунт.');
+                return;
+            }
             if (!state.jobId) return;
             try {
                 await api(`/api/crawl/${state.jobId}/checks/start`, { method: 'POST' });
@@ -1475,6 +1861,10 @@
         }
 
         async function startSitemapAudit() {
+            if (!state.auth.user) {
+                alert('Сначала войдите в аккаунт.');
+                return;
+            }
             if (!state.jobId) return;
             try {
                 await api(`/api/crawl/${state.jobId}/sitemap-audit/start`, { method: 'POST' });
@@ -1486,6 +1876,10 @@
         }
 
         async function cancelJob() {
+            if (!state.auth.user) {
+                alert('Сначала войдите в аккаунт.');
+                return;
+            }
             if (!state.jobId) return;
             try {
                 await api(`/api/crawl/${state.jobId}/cancel`, { method: 'POST' });
@@ -1502,7 +1896,9 @@
             await refreshAll();
             startPolling();
         }
-
+        els.registerBtn.addEventListener('click', registerUser);
+        els.loginBtn.addEventListener('click', loginUser);
+        els.logoutBtn.addEventListener('click', logoutUser);
         els.startBtn.addEventListener('click', startCrawl);
         els.startChecksBtn.addEventListener('click', startChecks);
         els.startSitemapBtn.addEventListener('click', startSitemapAudit);
@@ -1524,6 +1920,10 @@
         closeIssueModal();
       }
     });
+
+        window.addEventListener('pagehide', closeSessionOnExit);
+        window.addEventListener('beforeunload', closeSessionOnExit);
+        restoreSession();
 
         renderOverview();
         renderIssueSummary([]);

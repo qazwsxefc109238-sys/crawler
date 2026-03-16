@@ -355,13 +355,13 @@ namespace Crawler_project.Services
                 Warnings: warnings,
                 HasSitemapXml: hasSitemapXml,
                 InSitemapButNotFoundByCrawlCount: inSitemapNotInCrawl.Count,
-                InSitemapButNotFoundByCrawlSample: inSitemapNotInCrawl.Take(50).ToList(),
+                InSitemapButNotFoundByCrawlSample: inSitemapNotInCrawl.ToList(),
 
                 IndexableButNotInSitemapCount: indexableButNotInSitemap.Count,
-                IndexableButNotInSitemapSample: indexableButNotInSitemap.Take(50).ToList(),
+                IndexableButNotInSitemapSample: indexableButNotInSitemap.ToList(),
 
                 NoindexButInSitemapCount: noindexButInSitemap.Count,
-                NoindexButInSitemapSample: noindexButInSitemap.Take(50).ToList(),
+                NoindexButInSitemapSample: noindexButInSitemap.ToList(),
 
 
 
